@@ -1,0 +1,18 @@
+name = "radar-cartera"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "1a8ea65cdc1c48fe9939ce23a7ab283c"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# [vars]
+# APP_URL = "https://radar-cartera.TU_CUENTA.workers.dev"
+# MOCK = "1"   # datos simulados para pruebas

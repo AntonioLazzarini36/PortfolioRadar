@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1622">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Radar Cartera</title>
+<style>
+:root{
+  --bg:#f3f5f8; --card:#fff; --ink:#12161c; --ink2:#454e5a; --mut:#78818e; --line:#e3e7ec;
+  --accent:#2457e6; --accent-l:#e8eefd; --g:#0f8a45; --gl:#e3f4ea; --r:#d0301f; --rl:#fde9e7;
+  --am:#b36b00; --aml:#fdf2df; --band:#dfe6f3; --sheet:#fff;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0d1117;--card:#161b22;--ink:#e8ecf1;--ink2:#b6bfca;--mut:#8b95a2;--line:#2a313b;
+    --accent:#6c93ff;--accent-l:#1b2644;--g:#3ccf7f;--gl:#12291d;--r:#ff6b5c;--rl:#2e1614;
+    --am:#f0b04a;--aml:#2d2312;--band:#243049;--sheet:#161b22}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;
+  font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+.g{color:var(--g)}.r{color:var(--r)}.mut{color:var(--mut)}
+
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top) + 12px) 16px 8px}
+.top{display:flex;align-items:center;gap:10px}
+.top h1{font-size:21px;margin:0;flex:1;letter-spacing:-.01em}
+.iconbtn{border:0;background:var(--card);border:1px solid var(--line);width:40px;height:40px;border-radius:12px;display:grid;place-items:center;cursor:pointer}
+.iconbtn svg{width:20px;height:20px}
+.status{font-size:12px;color:var(--mut);margin-top:4px;display:flex;gap:8px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.dot.on{background:var(--g)}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin-top:10px}
+.seg button{flex:1;border:0;background:none;padding:8px 4px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--ink2);cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.sortbar{display:flex;gap:8px;margin-top:8px}
+.sortbar select{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13.5px}
+.sortbar .iconbtn{width:38px;height:38px}
+
+main{padding:4px 16px calc(env(safe-area-inset-bottom) + 96px)}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0 12px}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+.sum .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:650}
+.sum .v{font-size:16px;font-weight:700;margin-top:2px}
+
+.trow{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:8px;cursor:pointer}
+.trow.pos{background:var(--gl);border-color:var(--g)}
+.trow.neg{background:var(--rl);border-color:var(--r)}
+.trow-metrics{font-size:12.5px;color:var(--ink2);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow-metrics b{font-weight:700}
+.row1{display:flex;gap:10px;align-items:flex-start}
+.logo{width:34px;height:34px;border-radius:9px;object-fit:contain;flex-shrink:0}
+.logo-lg{width:40px;height:40px}
+.logo-sm{width:20px;height:20px;border-radius:6px;object-fit:contain;flex-shrink:0}
+.tk{font-weight:750;font-size:17px;letter-spacing:.01em}
+.nm{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.px{margin-left:auto;text-align:right}
+.px .p{font-weight:750;font-size:17px}
+.px .c{font-size:12.5px;font-weight:600}
+.badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--aml);color:var(--am);margin-left:4px;vertical-align:1px}
+.badge.hold{background:var(--accent-l);color:var(--accent)}
+.rng{position:relative;height:44px;margin:16px 4px 4px}
+.rng .axis{position:absolute;left:0;right:0;top:27px;height:4px;border-radius:2px;background:var(--line)}
+.rng .band{position:absolute;top:24px;height:10px;border-radius:5px;background:var(--band)}
+.mk{position:absolute;top:0;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
+.mk i{display:block}
+.mk.price i{width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--card);margin-top:8px;box-shadow:0 0 0 1px var(--ink)}
+.mk.mean i{width:3px;height:22px;background:var(--accent);margin-top:4px;border-radius:2px}
+.mk.entry i{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid var(--am);margin-top:0}
+.mk.mine i{width:3px;height:22px;background:var(--g);margin-top:4px;border-radius:2px}
+.mklabel{font-size:9.5px;font-weight:800;white-space:nowrap;line-height:1;margin-bottom:2px}
+.mk.mean .mklabel{color:var(--accent)}
+.mk.entry .mklabel{color:var(--am)}
+.mk.mine .mklabel{color:var(--g)}
+.mk.price .mklabel{color:var(--ink)}
+.rlab{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin:0 2px}
+.err{font-size:11.5px;color:var(--r);margin-top:6px}
+.empty{text-align:center;color:var(--mut);padding:50px 10px}
+.legend{display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--ink2);margin:8px 2px 10px}
+.legend span{display:flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px 8px}
+.sector-pills{display:flex;flex-wrap:wrap;gap:9px;margin:6px 2px 2px}
+.sector-pill{display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:7px 12px;font-size:12.5px;color:var(--ink2)}
+.sector-pill i{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.sector-pill b{color:var(--ink);font-weight:700}
+.sec{margin-top:12px}
+.sec summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink2);list-style:none;display:flex;align-items:center;gap:6px;padding:2px 0}
+.sec summary::-webkit-details-marker{display:none}
+.sec summary::before{content:"▸";display:inline-block;font-size:11px;color:var(--mut);transition:transform .15s ease}
+.sec[open] summary::before{transform:rotate(90deg)}
+.sec .tgtbox{margin-top:8px}
+.lg{display:inline-block}
+.lg.p{width:10px;height:10px;border-radius:50%;background:var(--ink)}
+.lg.m{width:3px;height:12px;background:var(--accent)}
+.lg.e{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid var(--am)}
+.lg.t{width:3px;height:12px;background:var(--g)}
+.lg.b{width:16px;height:8px;border-radius:4px;background:var(--band)}
+
+.fab{position:fixed;right:18px;bottom:calc(env(safe-area-inset-bottom) + 18px);width:58px;height:58px;border-radius:18px;border:0;background:var(--accent);color:#fff;
+  font-size:30px;box-shadow:0 6px 20px rgba(36,87,230,.35);cursor:pointer;z-index:6}
+
+.log{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px}
+.log .t{font-weight:650;font-size:14px}
+.log .b{font-size:13px;color:var(--ink2);margin-top:2px}
+.log .d{font-size:11px;color:var(--mut);margin-top:4px}
+
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:none;align-items:flex-end}
+.overlay.on{display:flex}
+.sheet{background:var(--sheet);width:100%;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 18px)}
+.sheet h2{margin:0 0 12px;font-size:19px;display:flex;align-items:center;gap:8px}
+.sheet h2 .x{margin-left:auto}
+label.f{display:block;font-size:12.5px;color:var(--ink2);font-weight:600;margin:12px 0 5px}
+input.i,textarea.i,select.i{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{width:100%;border:0;border-radius:13px;padding:13px;font-weight:700;background:var(--accent);color:#fff;margin-top:16px;cursor:pointer;font-size:15.5px}
+.btn.sec{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--rl);color:var(--r)}
+.res{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:7px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.res b{min-width:70px}
+.res span{font-size:13px;color:var(--ink2);flex:1}
+.res small{color:var(--mut)}
+.toggle{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-top:10px}
+.toggle input{width:22px;height:22px}
+.hint{font-size:12px;color:var(--mut);margin-top:6px}
+.toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.tgtbox{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px;margin-bottom:4px}
+.tgtbox div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px}
+.tgtbox b{display:block;font-size:17px;margin-top:2px}
+.tgtbox .sub{display:block;font-size:12px;font-weight:700;margin-top:2px;color:var(--ink2)}
+.tgtbox div.has-info{cursor:pointer;position:relative}
+.tgtbox div.has-info::after{content:"?";position:absolute;top:7px;right:9px;width:14px;height:14px;border-radius:50%;background:var(--line);color:var(--mut);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1}
+.info-pop{position:fixed;z-index:40;background:var(--ink);color:var(--bg);font-size:12px;font-weight:400;line-height:1.4;padding:10px 12px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="top">
+    <h1>Radar Cartera</h1>
+    <button class="iconbtn" id="btnRefresh" aria-label="Actualizar todo (precios y fundamentales)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/></svg></button>
+    <button class="iconbtn" id="btnSettings" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </div>
+  <div class="status"><span class="dot" id="mktDot"></span><span id="statusTxt">Cargando…</span></div>
+  <div class="seg" id="tabs">
+    <button data-tab="all" class="on">Todas</button>
+    <button data-tab="holding">Tengo</button>
+    <button data-tab="watch">Watchlist</button>
+    <button data-tab="alerts">Alertas</button>
+  </div>
+  <div class="sortbar" id="sortbar">
+    <select id="sortSel" aria-label="Ordenar por">
+      <option value="upMean">Potencial al consenso medio</option>
+      <option value="upHigh">Potencial al objetivo máximo</option>
+      <option value="upLow">Distancia al objetivo mínimo</option>
+      <option value="upMine">Distancia a mi objetivo de venta</option>
+      <option value="toBuy">Distancia a mi precio de compra</option>
+      <option value="pl">Ganancia sobre mi precio de entrada (%)</option>
+      <option value="plAbs">Ganancia en dinero (bruto)</option>
+      <option value="day">Variación de hoy</option>
+      <option value="value">Valor de mi posición</option>
+      <option value="analysts">Nº de analistas</option>
+      <option value="pe">P/E</option>
+      <option value="wma">Distancia al 200WMA</option>
+      <option value="peg">PEG</option>
+      <option value="roe">ROE</option>
+      <option value="de">Deuda/Patrimonio</option>
+      <option value="insiders">Insiders</option>
+      <option value="short">Interés en corto</option>
+      <option value="earnings">Días hasta los próximos resultados</option>
+      <option value="industry">Sector</option>
+      <option value="alpha">Ticker (A-Z)</option>
+    </select>
+    <button class="iconbtn" id="sortDir" aria-label="Invertir orden">↓</button>
+  </div>
+  <div class="sortbar" id="indBar">
+    <select id="indSel" aria-label="Filtrar por sector"><option value="">Todos los sectores</option></select>
+  </div>
+</header>
+
+<main id="list"></main>
+<button class="fab" id="btnAdd" aria-label="Añadir">+</button>
+
+<!-- Añadir / editar -->
+<div class="overlay" id="ovItem"><div class="sheet" id="sheetItem"></div></div>
+<!-- Ajustes -->
+<div class="overlay" id="ovSettings"><div class="sheet" id="sheetSettings"></div></div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { compareItems } from "./sort.js";
+const $ = (s, el = document) => el.querySelector(s);
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem("rc_" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("rc_" + k, JSON.stringify(v)); } catch {} },
+};
+let S = null;                       // estado del servidor
+let tab = LS.get("tab", "all");
+let sortKey = LS.get("sort", "upMean");
+let sortDesc = LS.get("desc", true);
+let indFilter = LS.get("indFilter", "");
+let token = LS.get("token", "");
+
+const nf = (v, d = 2) => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("es-ES", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pc = (v, d = 1) => v == null || isNaN(v) ? "—" : (v > 0 ? "+" : "") + nf(v, d) + " %";
+const cls = (v) => v == null ? "" : v >= 0 ? "g" : "r";
+// Para ganancia/pérdida: neutro (sin color) si es exactamente 0, no verde por
+// defecto como hace cls() con el resto de porcentajes.
+const clsPL = (v) => v == null ? "" : v > 0 ? "g" : v < 0 ? "r" : "";
+const cur = (c) => ({ USD: "$", EUR: "€", GBp: "p", GBP: "£" }[c] || (c || ""));
+// Logo por ticker (gratis, sin clave, se pide directo desde el navegador — no
+// gasta presupuesto de peticiones del Worker). El sufijo de bolsa (".AS", ".DE"...)
+// se quita porque el logo es de la empresa, no de la cotización concreta.
+// Si el ticker no tiene logo ahí, el onerror del <img> simplemente lo oculta.
+const logoUrl = (sym) => `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(sym.split(".")[0])}.png`;
+const up = (a, b) => (a != null && b) ? (a - b) / b * 100 : null;
+const num = (v) => (v === "" || v == null || isNaN(+v) ? null : +v);
+// Conversión a EUR (Trading 212 va en euros aunque la acción cotice en dólares).
+// GBP/GBp no tienen tipo de cambio propio todavía -> null (no se muestra en EUR).
+function toEur(amount, currency) {
+  if (amount == null) return null;
+  if (currency === "EUR") return amount;
+  if (currency === "USD" && S?.fx?.usdPerEur) return amount / S.fx.usdPerEur;
+  return null;
+}
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2600); }
+
+async function api(path, opts = {}) {
+  const r = await fetch("/api" + path, { ...opts, headers: { "content-type": "application/json", authorization: "Bearer " + token, ...(opts.headers || {}) } });
+  if (r.status === 401) { openSettings(true); throw new Error("Introduce tu contraseña de la app"); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || "Error " + r.status);
+  return d;
+}
+
+// ───────── métricas por símbolo ─────────
+function metrics(sym) {
+  const it = S.items[sym], q = S.market[sym] || {}, t = S.targets[sym] || {};
+  const p = q.price;
+  const val = it.qty && p != null ? it.qty * p : null;
+  const plAbs = it.avg && it.qty && p != null ? (p - it.avg) * it.qty : null;
+  return {
+    sym, it, q, t, p,
+    upMean: up(t.mean, p), upHigh: up(t.high, p), upLow: up(t.low, p),
+    upMine: up(it.myTarget, p), toBuy: up(it.myBuy, p),
+    pl: up(p, it.avg), plAbs,
+    day: up(p, q.prevClose), value: val, analysts: t.analysts ?? null, pe: t.pe ?? null,
+    valueEur: toEur(val, q.currency), plAbsEur: toEur(plAbs, q.currency),
+    // Más fundamentales ordenables (petición del usuario 2026-09-27): distancia
+    // al 200WMA (negativo = por debajo, "zona de compra"), PEG, ROE, deuda/
+    // patrimonio, insiders e interés en corto — mismos campos que ya se
+    // muestran en la sección Fundamentales, reutilizados aquí para poder
+    // ordenar la lista por ellos.
+    wma: up(p, t.wma200), peg: t.pegRatio ?? null, roe: t.returnOnEquity ?? null,
+    de: t.debtToEquity ?? null, insiders: t.heldPercentInsiders ?? null, short: t.shortPercentOfFloat ?? null,
+    sector: t.sector ?? null, industry: t.industry ?? null,
+    // Días hasta los próximos resultados (negativo o null si la fecha ya pasó
+    // y todavía no se ha refrescado el consenso con la siguiente — se oculta
+    // en ese caso, tanto en el orden como en la ficha, en vez de enseñar un
+    // "-3 días" confuso).
+    earningsDays: (t.nextEarningsDate != null && t.nextEarningsDate >= Date.now()) ? Math.ceil((t.nextEarningsDate - Date.now()) / 86400e3) : null,
+  };
+}
+
+// Sectores/industrias presentes en un conjunto de acciones (para rellenar el
+// desplegable de filtro) — únicos, alfabéticos. Se calcula sobre lo visible en
+// la pestaña actual, antes de aplicar el propio filtro de sector.
+function industryOptions(ms) {
+  const set = new Set();
+  ms.forEach(m => { if (m.industry) set.add(m.industry); });
+  return [...set].sort();
+}
+// Color determinista por sector (mismo nombre -> mismo color siempre, se mire
+// cuando se mire) — paleta categórica aparte, deliberadamente distinta de los
+// colores semánticos (verde/rojo/ámbar) que ya usa la app, para no sugerir
+// "bueno/malo" en algo que es una categoría neutra, no un juicio de valor.
+const SECTOR_COLORS = ["#6c93ff", "#3ccf7f", "#f0b04a", "#ff6b5c", "#c792ea", "#4fd1c5", "#f783ac", "#82c91e", "#748ffc", "#e599f7"];
+function sectorColor(name) {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return SECTOR_COLORS[h % SECTOR_COLORS.length];
+}
+// "¿Cómo tengo distribuida la cartera?" — reparto por sector de lo que
+// REALMENTE tienes (no la watchlist), por valor en EUR. Lo sin clasificar
+// (consenso/fundamentales aún no refrescados) se agrupa aparte en vez de
+// desaparecer sin más, para que los porcentajes no queden descuadrados sin
+// explicación.
+function sectorBreakdown(hold) {
+  const byInd = {}; let total = 0;
+  hold.forEach(m => {
+    const v = m.valueEur; if (v == null) return;
+    const key = m.industry || "Sin clasificar";
+    byInd[key] = (byInd[key] || 0) + v; total += v;
+  });
+  if (!total) return "";
+  const rows = Object.entries(byInd).sort((a, b) => b[1] - a[1]);
+  const pills = rows.map(([name, v]) => `<span class="sector-pill"><i style="background:${sectorColor(name)}"></i>${esc(name)} <b>${nf(v / total * 100, 0)}%</b></span>`).join("");
+  return section("Distribución por sector", `<div class="sector-pills">${pills}</div>`, false);
+}
+
+// ───────── render ─────────
+function render() {
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#sortSel").value = sortKey; $("#sortDir").textContent = sortDesc ? "↓" : "↑";
+  $("#sortbar").style.display = tab === "alerts" ? "none" : "flex";
+  $("#indBar").style.display = tab === "alerts" ? "none" : "flex";
+  if (!S) return;
+  const last = S.lastRun ? new Date(S.lastRun).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—";
+  $("#mktDot").classList.toggle("on", !!S.marketsOpen);
+  $("#statusTxt").textContent = `${S.marketsOpen ? "Mercado abierto" : "Mercado cerrado"} · última revisión ${last}`;
+  const L = $("#list");
+
+  if (tab === "alerts") {
+    L.innerHTML = S.log.length ? S.log.map(l => `<div class="log">
+        <div style="display:flex;align-items:center;gap:8px">${l.symbol ? `<img class="logo-sm" src="${logoUrl(l.symbol)}" alt="" loading="lazy" onerror="this.style.display='none'">` : ""}<div class="t">${esc(l.title)}</div></div>
+        <div class="b">${esc(l.body)}</div><div class="d">${new Date(l.t).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</div></div>`).join("")
+      : `<div class="empty">Todavía no hay alertas.<br>Aparecerán aquí y en la app ntfy.</div>`;
+    return;
+  }
+
+  let ms = Object.keys(S.items).map(metrics);
+  if (tab === "holding") ms = ms.filter(m => m.it.kind === "holding");
+  if (tab === "watch") ms = ms.filter(m => m.it.kind !== "holding");
+  const inds = industryOptions(ms);
+  $("#indSel").innerHTML = `<option value="">Todos los sectores</option>` + inds.map(i => `<option value="${esc(i)}" ${indFilter === i ? "selected" : ""}>${esc(i)}</option>`).join("");
+  if (indFilter && !inds.includes(indFilter)) { indFilter = ""; LS.set("indFilter", ""); }
+  $("#indSel").value = indFilter;
+  if (indFilter) ms = ms.filter(m => m.industry === indFilter);
+  ms.sort((a, b) => compareItems(a, b, sortKey, sortDesc));
+
+  if (!Object.keys(S.items).length) {
+    L.innerHTML = `<div class="empty"><b>Tu radar está vacío</b><br><br>Pulsa <b>+</b> para añadir una acción,<br>o importa tu cartera desde Ajustes.</div>`;
+    return;
+  }
+
+  let head = "";
+  const hold = Object.keys(S.items).map(metrics).filter(m => m.it.kind === "holding");
+  const aboveMean = Object.keys(S.items).map(metrics).filter(m => m.upMean != null && m.upMean <= 0).length;
+  head = `<div class="summary">
+    <div class="sum"><div class="l">Tengo</div><div class="v">${hold.length}</div></div>
+    <div class="sum"><div class="l">Watchlist</div><div class="v">${Object.keys(S.items).length - hold.length}</div></div>
+    <div class="sum"><div class="l">Sobre consenso</div><div class="v">${aboveMean}</div></div>
+  </div>`;
+  if (hold.length && tab !== "watch") {
+    let totalValueEur = 0, totalCostEur = 0, unconverted = 0;
+    hold.forEach(m => {
+      if (m.valueEur == null) { if (m.value != null) unconverted++; return; }
+      totalValueEur += m.valueEur;
+      totalCostEur += toEur((m.it.avg || 0) * (m.it.qty || 0), m.q.currency) || 0;
+    });
+    const g = up(totalValueEur, totalCostEur);
+    head += `<div class="legend" style="font-size:12.5px;color:var(--ink2)">Valor total (EUR): <b>${nf(totalValueEur, 0)} €</b> <span class="${cls(g)}">${pc(g)}</span>${unconverted ? ` · <span class="mut">${unconverted} sin convertir</span>` : ""}</div>`;
+    head += sectorBreakdown(hold);
+  }
+  L.innerHTML = head + (ms.length ? ms.map(row).join("") : `<div class="empty">Nada en esta pestaña.</div>`);
+  L.querySelectorAll(".trow").forEach(c => c.onclick = () => openItem(c.dataset.sym));
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function rangeBar(m) {
+  const pts = [m.p, m.t.low, m.t.high, m.t.mean, m.it.avg, m.it.myTarget].filter(v => v != null && !isNaN(v));
+  if (pts.length < 2) return "";
+  let lo = Math.min(...pts), hi = Math.max(...pts); const pad = (hi - lo) * 0.06 || hi * 0.05; lo -= pad; hi += pad;
+  const x = v => ((v - lo) / (hi - lo) * 100).toFixed(2) + "%";
+  let h = `<div class="rng"><div class="axis"></div>`;
+  if (m.t.low != null && m.t.high != null) h += `<div class="band" style="left:${x(m.t.low)};width:calc(${x(m.t.high)} - ${x(m.t.low)})"></div>`;
+  // Cada marcador lleva su valor encima — así se ve qué es cada uno sin tener
+  // que mirar la leyenda.
+  if (m.t.mean != null) h += `<div class="mk mean" style="left:${x(m.t.mean)}"><span class="mklabel">${nf(m.t.mean)}</span><i></i></div>`;
+  if (m.it.myTarget != null) h += `<div class="mk mine" style="left:${x(m.it.myTarget)}"><span class="mklabel">${nf(m.it.myTarget)}</span><i></i></div>`;
+  if (m.it.avg != null) h += `<div class="mk entry" style="left:${x(m.it.avg)}"><span class="mklabel">${nf(m.it.avg)}</span><i></i></div>`;
+  if (m.p != null) h += `<div class="mk price" style="left:${x(m.p)}"><span class="mklabel">${nf(m.p)}</span><i></i></div>`;
+  h += `</div><div class="rlab"><span>${m.t.low != null ? "mín " + nf(m.t.low) : ""}</span><span>${m.t.high != null ? "máx " + nf(m.t.high) : ""}</span></div>`;
+  return h;
+}
+
+// Cuando dos marcadores caen cerca (p. ej. el precio y mi entrada), sus
+// etiquetas de valor se pisan. Se mide de verdad lo ya renderizado (más
+// fiable que adivinar por los valores) y se desplaza hacia arriba, en pisos,
+// la que colisione — como etiquetas en un mapa.
+function layoutRangeLabels(root) {
+  const rng = root.querySelector(".rng");
+  if (!rng) return;
+  const rngRect = rng.getBoundingClientRect();
+  const items = [...rng.querySelectorAll(".mklabel")].map((label) => {
+    const r = label.getBoundingClientRect();
+    return { label, left: r.left - rngRect.left, right: r.right - rngRect.left };
+  }).sort((a, b) => a.left - b.left);
+  const tierRight = [];
+  const GAP = 6, TIER_PX = 13;
+  let maxTier = 0;
+  for (const it of items) {
+    let tier = 0;
+    while (tierRight[tier] !== undefined && it.left < tierRight[tier] + GAP) tier++;
+    tierRight[tier] = it.right;
+    if (tier > 0) it.label.style.transform = `translateY(${-tier * TIER_PX}px)`;
+    maxTier = Math.max(maxTier, tier);
+  }
+  if (maxTier > 0) rng.style.marginTop = `${16 + maxTier * TIER_PX}px`;
+}
+
+// Fila compacta de la lista: lo esencial de un vistazo. El resto (consenso
+// completo, barra de rango, mis precios objetivo, posición...) se ve al
+// pulsar, en la vista previa de openItem().
+// Dato por el que se está ordenando ahora mismo: se destaca junto al precio
+// para que se entienda de un vistazo por qué la lista está en ese orden.
+const SORT_LABEL = { upMean: "Consenso", upHigh: "Pot. máximo", upLow: "Dist. mínimo", upMine: "Mi objetivo", toBuy: "Mi compra", pl: "P/L", plAbs: "Ganancia", day: "Hoy", value: "Valor", analysts: "Analistas", pe: "P/E", wma: "200WMA", peg: "PEG", roe: "ROE", de: "Deuda/Patr.", insiders: "Insiders", short: "Interés corto", earnings: "Resultados", industry: "Sector" };
+function sortMetric(m) {
+  const label = SORT_LABEL[sortKey];
+  if (!label) return null; // alpha: el propio ticker ya es lo que ordena
+  let text, color = "";
+  if (sortKey === "value") { if (m.value == null) return null; text = m.valueEur != null ? `${nf(m.valueEur, 0)} €` : `${nf(m.value, 0)} ${cur(m.q.currency)}`; }
+  else if (sortKey === "analysts") { if (m.analysts == null) return null; text = String(m.analysts); }
+  else if (sortKey === "pe") { if (m.pe == null) return null; text = nf(m.pe, 1); }
+  else if (sortKey === "pl") { if (m.pl == null) return null; text = pc(m.pl) + (m.plAbsEur != null ? ` (${m.plAbsEur >= 0 ? "+" : ""}${nf(m.plAbsEur, 0)} €)` : ""); color = clsPL(m.pl); }
+  else if (sortKey === "plAbs") { const v = m.plAbsEur ?? m.plAbs; if (v == null) return null; const suf = m.plAbsEur != null ? " €" : ` ${cur(m.q.currency)}`; text = `${v >= 0 ? "+" : ""}${nf(v, 0)}${suf}`; color = clsPL(v); }
+  // Fundamentales ordenables: mismo formato y mismos colores que sus celdas en
+  // la ficha de detalle (clsPEG/clsROE/clsDE/clsInsiders/clsShortInterest),
+  // para que el criterio de "verde/rojo" sea el mismo se mire donde se mire.
+  else if (sortKey === "peg") { if (m.peg == null) return null; text = nf(m.peg, 2); color = clsPEG(m.peg); }
+  else if (sortKey === "roe") { if (m.roe == null) return null; text = pctFrac(m.roe); color = clsROE(m.roe); }
+  else if (sortKey === "de") { if (m.de == null) return null; text = `${nf(m.de, 1)} %`; color = clsDE(m.de); }
+  else if (sortKey === "insiders") { if (m.insiders == null) return null; text = pctPlain(m.insiders); color = clsInsiders(m.insiders); }
+  else if (sortKey === "short") { if (m.short == null) return null; text = pctPlain(m.short); color = clsShortInterest(m.short); }
+  // 200WMA: negativo = precio por debajo de su media de 200 semanas ("zona de
+  // compra"), por eso el color se invierte igual que en la ficha de detalle.
+  else if (sortKey === "wma") { if (m.wma == null) return null; text = pc(m.wma); color = cls(-m.wma); }
+  // Días hasta los próximos resultados: en rojo si quedan 3 días o menos (más
+  // volatilidad esperable cerca del informe), sin color si falta más tiempo —
+  // no es un juicio "bueno/malo" como el resto de colores, solo un aviso.
+  else if (sortKey === "earnings") { if (m.earningsDays == null) return null; text = m.earningsDays === 0 ? "hoy" : `${m.earningsDays} d`; color = clsEarnings(m.earningsDays); }
+  else if (sortKey === "industry") { if (!m.industry) return null; text = m.industry; }
+  else { const v = m[sortKey]; if (v == null) return null; text = pc(v, sortKey === "upHigh" || sortKey === "upLow" ? 0 : 1); color = cls(v); }
+  return { label, text, color };
+}
+function row(m) {
+  const c = cur(m.q.currency);
+  const ses = m.q.session === "post" ? `<span class="badge">AFTER</span>` : m.q.session === "pre" ? `<span class="badge">PRE</span>` : "";
+  const hold = m.it.kind === "holding" ? `<span class="badge hold">TENGO</span>` : "";
+  const err = [m.q.error && !m.p ? "Precio: " + m.q.error : "", !m.t.mean && m.t.error ? "Consenso: " + m.t.error : ""].filter(Boolean).join(" · ");
+  const parts = [];
+  if (m.t.mean != null) parts.push(`Consenso <b>${nf(m.t.mean)} ${c}</b> <span class="${cls(m.upMean)}">${pc(m.upMean)}</span>`);
+  if (m.t.pe != null) parts.push(`P/E <b>${nf(m.t.pe, 1)}</b>${m.t.forwardPe != null ? ` <span class="mut">(fwd ${nf(m.t.forwardPe, 1)})</span>` : ""}`);
+  if (m.it.kind === "holding") {
+    if (m.pl != null) parts.push(`P/L <b class="${clsPL(m.pl)}">${pc(m.pl)}</b>${m.plAbsEur != null ? ` (${m.plAbsEur >= 0 ? "+" : ""}${nf(m.plAbsEur, 0)} €)` : ""}`);
+    if (m.valueEur != null) parts.push(`Valor <b>${nf(m.valueEur, 0)} €</b>`);
+  }
+  const metricsLine = parts.join(" · ");
+  // Ganando/perdiendo se ve de un vistazo en el propio fondo de la fila, no
+  // solo en el número (spec ampliada a petición del usuario).
+  const plClass = m.it.kind === "holding" && m.pl != null ? (m.pl > 0 ? "pos" : m.pl < 0 ? "neg" : "") : "";
+  const sm = sortMetric(m);
+  return `<div class="trow ${plClass}" data-sym="${esc(m.sym)}">
+    <div class="row1">
+      <img class="logo" src="${logoUrl(m.sym)}" alt="" loading="lazy" onerror="this.style.display='none'">
+      <div><div class="tk">${esc(m.sym)}${hold}</div><div class="nm">${esc(m.it.name || "")}</div></div>
+      <div class="px"><div class="p">${nf(m.p)} ${c}${ses}</div>${sm ? `<div class="${sm.color}" style="font-size:13px;font-weight:700;margin-top:1px">${esc(sm.label)} ${sm.text}</div>` : ""}</div>
+    </div>
+    <div class="trow-metrics">${metricsLine}</div>
+    ${err ? `<div class="err">${esc(err)}</div>` : ""}
+  </div>`;
+}
+
+// Cuadrícula de estadísticas con etiqueta + valor grande (+ un dato secundario
+// en color, p. ej. el % de potencial). Mucho más legible que una nube de chips
+// pequeños. Las celdas sin valor se omiten; si no queda ninguna, no pinta nada.
+// Explicación genérica de cada campo (misma para todas las acciones, no
+// depende del valor concreto) — se muestra al tocar el cuadradito. Las claves
+// deben coincidir tal cual con el `label` de la celda.
+const METRIC_INFO = {
+  "Consenso medio": "Precio objetivo medio entre todos los analistas que cubren la empresa. Si el precio actual está muy por debajo, indican más potencial de subida.",
+  "Mediana": "Como el consenso medio, pero el valor central de todos los objetivos — no lo mueve tanto un analista muy optimista o muy pesimista suelto.",
+  "Máximo": "El objetivo más alto puesto por cualquiera de los analistas que cubren la empresa.",
+  "Mínimo": "El objetivo más bajo puesto por cualquiera de los analistas que cubren la empresa.",
+  "Analistas": "Cuántos analistas profesionales han puesto un precio objetivo a esta empresa, y su recomendación media. Verde si es de compra, rojo si es de venta.",
+  "Actualizado": "Cuándo se refrescó este consenso por última vez, y de qué fuente viene el dato.",
+  "P/E": "Precio entre beneficio por acción (de los últimos 12 meses). Cuánto pagas por cada euro/dólar de beneficio ya generado. Verde si es bajo (≤20, \"barato\"), rojo si es alto (≥40, \"caro\") — aunque un P/E alto no siempre es malo si la empresa crece mucho.",
+  "Fwd P/E": "Como el P/E, pero con el beneficio que se espera para el próximo año en vez del ya generado. Mismos colores que el P/E.",
+  "Deuda/Patrimonio": "Cuánta deuda tiene la empresa comparada con lo que vale su patrimonio. Verde si es baja (≤50%), rojo si es alta (≥150%, mucho apalancamiento). Si sale negativo no es bueno: significa que el patrimonio de la empresa es negativo (más pérdidas acumuladas que capital), una señal de riesgo.",
+  "Deuda total": "Deuda total de la empresa, a corto y largo plazo.",
+  "Caja": "Efectivo y equivalentes que tiene la empresa disponibles ahora mismo.",
+  "ROE": "Rentabilidad sobre el patrimonio: cuánto beneficio genera la empresa por cada euro/dólar que han puesto sus accionistas. Verde si es alto (≥15%), rojo si es negativo (pérdidas).",
+  "Crecimiento ingresos": "Cuánto han crecido (o caído) las ventas respecto al año anterior. Verde si crece, rojo si cae.",
+  "Margen bruto": "Qué porcentaje de las ventas le queda a la empresa tras el coste directo de lo que vende. Verde si es positivo, rojo si es negativo.",
+  "Margen operativo": "Como el margen bruto, pero descontando también los gastos de operar el negocio (marketing, oficinas...). Verde si es positivo, rojo si es negativo.",
+  "Margen neto": "Qué porcentaje de las ventas acaba siendo beneficio real, tras todos los gastos e impuestos. Verde si es positivo, rojo si es negativo.",
+  "Flujo de caja libre": "Dinero que genera el negocio después de pagar sus gastos e inversiones necesarias — lo que le queda de verdad.",
+  "Capex (estimado)": "Inversión en activos (fábricas, equipos...) para mantener o crecer el negocio. Es una estimación (flujo operativo menos flujo libre), no el dato exacto de la contabilidad.",
+  "200WMA (semanal)": "Media del precio de cierre de las últimas 200 semanas (~4 años). Si el precio actual está por debajo, históricamente ha sido una \"zona de compra\" en empresas de calidad — por eso se colorea en verde cuando estás por debajo.",
+  "PEG": "Relaciona el P/E con el crecimiento esperado de beneficios. Verde si es bajo (≤1: crece más de lo que pagas por ello), rojo si es alto (≥2: pagas caro para lo que crece).",
+  "Dividendo": "Rentabilidad por dividendo: cuánto reparte la empresa al año en relación al precio de la acción. Que no aparezca no es malo — muchas empresas de crecimiento no reparten dividendo porque reinvierten el beneficio.",
+  "Ratio de liquidez": "Compara lo que la empresa tiene a corto plazo (caja, cobros pendientes...) con lo que debe pagar a corto plazo. Verde si es ≥1,5 (cubre de sobra sus pagos), rojo si es <1 (podría tener apuros para pagar a corto plazo).",
+  "Insiders": "Porcentaje de la empresa en manos de sus propios directivos y fundadores. Un porcentaje alto suele verse bien: quienes la dirigen también tienen su propio dinero en juego.",
+  "Interés en corto": "Porcentaje de las acciones en circulación que otros inversores han vendido a corto (apostando a que baje). Verde si es bajo, rojo si es muy alto (≥10 %: muchos esperan que baje, con riesgo de subida brusca si se equivocan y tienen que recomprar).",
+  "Próximo informe": "Fecha prevista del próximo informe de resultados trimestrales, según Yahoo Finance. A veces es una fecha estimada (todavía no confirmada por la empresa) — por eso puede moverse de un refresco a otro.",
+  "EPS estimado": "Beneficio por acción que los analistas esperan que la empresa presente en ese informe. Dato orientativo, no una previsión fiable.",
+  "Mi objetivo de venta": "El precio al que quieres vender. Si el precio actual lo alcanza o se acerca, te avisamos.",
+  "Comprar por debajo de": "El precio al que quieres comprar más. Si el precio actual baja de ahí, te avisamos.",
+  "Ganancia": "Cuánto has ganado o perdido desde que compraste, en % y en la moneda de la acción.",
+  "Valor de la posición": "Cuánto vale hoy tu posición completa (cantidad × precio actual), en la moneda en la que cotiza la acción.",
+  "Valor (EUR)": "Lo mismo que el valor de la posición, convertido a euros al tipo de cambio actual.",
+  "Ganancia (EUR)": "Tu ganancia o pérdida convertida a euros.",
+};
+function statGrid(cells) {
+  const visible = cells.filter((c) => c.value != null);
+  if (!visible.length) return "";
+  return `<div class="tgtbox">${visible.map((c) => {
+    const info = METRIC_INFO[c.label];
+    return `<div${info ? ` class="has-info" data-info="${esc(info)}"` : ""}>${esc(c.label)}<b class="${c.valueCls || ""}">${c.value}</b>${c.sub != null ? `<span class="sub ${c.subCls || ""}">${c.sub}</span>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+// Toca un cuadradito con info -> aparece (o se oculta) una descripción corta
+// debajo, genérica para esa métrica (no depende de la acción concreta).
+// Popup flotante (no dentro del cuadradito, así no cambia de tamaño ni mueve
+// el resto de la cuadrícula). Se posiciona junto a la celda tocada y se cierra
+// al tocar fuera, al volver a tocar la misma celda, o al hacer scroll.
+let openInfoPop = null;
+function closeInfoPop() { if (openInfoPop) { openInfoPop.remove(); openInfoPop = null; } }
+function wireStatInfo(root) {
+  root.querySelectorAll(".tgtbox > div.has-info").forEach((cell) => {
+    cell.onclick = (e) => {
+      e.stopPropagation();
+      const wasThisCell = openInfoPop && openInfoPop._cell === cell;
+      closeInfoPop();
+      if (wasThisCell) return;
+      const r = cell.getBoundingClientRect();
+      const pop = document.createElement("div");
+      pop.className = "info-pop";
+      pop.textContent = cell.dataset.info;
+      document.body.appendChild(pop);
+      pop._cell = cell;
+      const pw = Math.min(260, window.innerWidth - 20);
+      pop.style.width = pw + "px";
+      let left = r.left + r.width / 2 - pw / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - pw - 10));
+      let top = r.bottom + 8;
+      const ph = pop.getBoundingClientRect().height;
+      if (top + ph > window.innerHeight - 10) top = r.top - ph - 8;
+      pop.style.left = left + "px";
+      pop.style.top = top + "px";
+      openInfoPop = pop;
+    };
+  });
+}
+document.addEventListener("click", closeInfoPop);
+document.addEventListener("scroll", closeInfoPop, true);
+// Umbrales orientativos para colorear fundamentales sin dirección de signo
+// clara (P/E, deuda/patrimonio, ROE) — el resto de fundamentales (márgenes,
+// crecimiento) se colorea directamente por signo con cls().
+const clsPE = (v) => v == null ? "" : v <= 20 ? "g" : v >= 40 ? "r" : "";
+// Negativo no es bueno aquí: pasa cuando el patrimonio de la empresa es
+// negativo (más pérdidas acumuladas que capital metido), una señal mala, no
+// "le deben dinero a la empresa" — la deuda en sí casi nunca es negativa.
+const clsDE = (v) => v == null ? "" : v < 0 ? "r" : v <= 50 ? "g" : v >= 150 ? "r" : "";
+const clsROE = (v) => v == null ? "" : v >= 0.15 ? "g" : v < 0 ? "r" : "";
+const clsPEG = (v) => v == null ? "" : v <= 1 ? "g" : v >= 2 ? "r" : "";
+const clsCurrentRatio = (v) => v == null ? "" : v >= 1.5 ? "g" : v < 1 ? "r" : "";
+const clsInsiders = (v) => v == null ? "" : v >= 0.05 ? "g" : "";
+const clsShortInterest = (v) => v == null ? "" : v >= 0.1 ? "r" : v <= 0.02 ? "g" : "";
+const clsEarnings = (d) => d == null ? "" : d <= 3 ? "r" : "";
+const clsRating = (r) => { if (!r) return ""; const s = r.toLowerCase(); if (s.includes("strong buy") || s === "buy") return "g"; if (s.includes("strong sell") || s === "sell") return "r"; return ""; };
+// Sección plegable: título + contenido (normalmente un statGrid). Si el
+// contenido viene vacío no pinta nada (p. ej. sin fundamentales todavía).
+function section(title, html, open = true) {
+  if (!html) return "";
+  return `<details class="sec" ${open ? "open" : ""}><summary>${esc(title)}</summary>${html}</details>`;
+}
+
+// Vista previa (dentro de la hoja de detalle/edición): todo lo que antes iba
+// en la tarjeta de la lista, reorganizado en secciones claras en vez de una
+// nube de chips — barra de rango, consenso de analistas, tus objetivos y tu
+// posición (con su valor y ganancia también en EUR).
+// Formatea números grandes (deuda, caja, flujo de caja...) de forma legible:
+// 5 200 000 000 -> "5,2 mil M", 850 000 000 -> "850 M".
+function nfBig(v, c = "") {
+  if (v == null) return null;
+  const sign = v < 0 ? "-" : "";
+  const a = Math.abs(v);
+  const suf = c ? ` ${c}` : "";
+  if (a >= 1e9) return `${sign}${nf(a / 1e9, 1)} mil M${suf}`;
+  if (a >= 1e6) return `${sign}${nf(a / 1e6, 0)} M${suf}`;
+  return `${sign}${nf(a, 0)}${suf}`;
+}
+// Yahoo da márgenes/ROE/crecimiento como fracción (0.28 = 28 %).
+const pctFrac = (v) => v == null ? null : `${v >= 0 ? "+" : ""}${nf(v * 100, 1)} %`;
+// Para fracciones que son siempre una parte de un todo (dividendo, insiders,
+// interés en corto): sin el "+" delante, que ahí no aporta nada.
+const pctPlain = (v) => v == null ? null : `${nf(v * 100, 1)} %`;
+
+// "Tu posición": no hay botón "Tengo acciones" — si hay cantidad y precio de
+// compra, tienes posición y punto (se ve y se edita aquí mismo); si no, se ve
+// un hueco vacío con un botón para añadirla. El campo `kind` (holding/watch)
+// se sigue guardando, pero ahora se DEDUCE de si rellenas estos dos campos,
+// no de un interruptor aparte (petición del usuario 2026-09-28: el interruptor
+// era "incomprensible" en cuanto ya se ve la posición real debajo).
+function positionSection(it, m) {
+  const hasPos = !!(it && it.qty != null && it.avg != null);
+  const c = m ? cur(m.q.currency) : "";
+  const inputsHtml = `<div class="two">
+      <div><label class="f">Cantidad</label><input class="i" id="fQty" inputmode="decimal" value="${it?.qty ?? ""}"></div>
+      <div><label class="f">Mi precio de compra (medio)</label><input class="i" id="fAvg" inputmode="decimal" value="${it?.avg ?? ""}"></div>
+    </div>`;
+  const statsHtml = (hasPos && m) ? statGrid([
+    { label: "Ganancia", value: m.pl != null ? pc(m.pl) : null, valueCls: clsPL(m.pl), sub: m.plAbs != null ? `${m.plAbs >= 0 ? "+" : ""}${nf(m.plAbs)} ${c}` : null, subCls: clsPL(m.pl) },
+    { label: "Valor de la posición", value: m.value != null ? `${nf(m.value, 0)} ${c}` : null },
+    { label: "Valor (EUR)", value: m.valueEur != null ? `${nf(m.valueEur, 0)} €` : null },
+    { label: "Ganancia (EUR)", value: m.plAbsEur != null ? `${m.plAbsEur >= 0 ? "+" : ""}${nf(m.plAbsEur, 0)} €` : null, valueCls: clsPL(m.plAbsEur) },
+  ]) : "";
+  const body = hasPos
+    ? `<div id="holdFields">${inputsHtml}</div>${statsHtml}`
+    : `<div id="posEmpty"><p class="hint">No tienes ninguna posición en esta acción.</p><button class="btn sec" id="fAddPos" type="button">+ Añadir posición</button></div>
+       <div id="holdFields" style="display:none">${inputsHtml}</div>`;
+  return section("Tu posición", body, hasPos);
+}
+function wirePositionSection(root) {
+  const btn = root.querySelector("#fAddPos");
+  if (btn) btn.onclick = () => {
+    root.querySelector("#posEmpty").style.display = "none";
+    root.querySelector("#holdFields").style.display = "";
+    root.querySelector("#fQty").focus();
+  };
+}
+
+// Simulador de "vender un % al subir un tramo, comprar un % al bajar el mismo
+// tramo" (grid trading), a petición del usuario, para ver qué habría pasado
+// aplicando esa regla en los últimos meses sobre una posición real — con
+// datos históricos de verdad, no una promesa de resultados futuros. Solo
+// tiene sentido si hay posición (cantidad + precio de compra); el cálculo lo
+// hace el servidor (/api/backtest), que es quien puede pedirle el histórico a
+// Yahoo.
+function backtestSection(m) {
+  if (!m || m.it.qty == null || m.it.avg == null) return "";
+  return section("Simulador: ¿vender/comprar por tramos?", `
+    <p class="hint">Simula vender un % de tu posición cada vez que sube un tramo, y recomprar con ese dinero cada vez que baja OTRO tramo (normalmente más pequeño, para recomprar en cualquier retroceso pequeño y no solo si cae tanto como subió) — con los precios de cierre reales de los últimos meses. Es una simulación histórica, no una recomendación.</p>
+    <div class="two">
+      <div><label class="f">% subida para vender</label><input class="i" id="btUp" inputmode="decimal" value="5"></div>
+      <div><label class="f">% bajada para recomprar</label><input class="i" id="btDown" inputmode="decimal" value="2"></div>
+    </div>
+    <div class="two">
+      <div><label class="f">% operado por tramo</label><input class="i" id="btTrade" inputmode="decimal" value="5"></div>
+      <div><label class="f">Meses de histórico</label><input class="i" id="btMonths" inputmode="decimal" value="4"></div>
+    </div>
+    <button class="btn sec" id="btRun" type="button">Simular</button>
+    <div id="btOut"></div>
+  `, false);
+}
+function renderBacktestResult(d, c) {
+  const diff = d.strategyGainPct != null && d.holdGainPct != null ? d.strategyGainPct - d.holdGainPct : null;
+  const stats = statGrid([
+    { label: "Valor final con la estrategia", value: `${nf(d.finalValue, 0)} ${c}`, sub: pc(d.strategyGainPct), subCls: clsPL(d.strategyGainPct) },
+    { label: "Valor si solo hubieras mantenido", value: `${nf(d.holdValue, 0)} ${c}`, sub: pc(d.holdGainPct), subCls: clsPL(d.holdGainPct) },
+    { label: "Diferencia frente a mantener", value: pc(diff), valueCls: clsPL(diff) },
+    { label: "Operaciones simuladas", value: String(d.trades.length) },
+  ]);
+  const trades = d.trades.length ? `<div style="max-height:220px;overflow:auto;margin-top:8px">${d.trades.map((t) => `
+    <div class="res"><b class="${t.action === "sell" ? "g" : ""}">${t.action === "sell" ? "Venta" : "Compra"}</b>
+      <span>${nf(t.qty, 3)} acciones a ${nf(t.price)} ${c}</span>
+      <small>${new Date(t.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}</small></div>`).join("")}</div>` : "";
+  return `${stats}${trades}<p class="hint" style="margin-top:8px">Simulación con datos históricos de los últimos ${d.months} meses (${d.days} sesiones) — no es un consejo de inversión ni garantiza resultados futuros.</p>`;
+}
+function wireBacktest(root, sym, currency) {
+  const btn = root.querySelector("#btRun");
+  if (!btn) return;
+  btn.onclick = async () => {
+    const out = root.querySelector("#btOut");
+    btn.textContent = "Simulando…"; btn.disabled = true;
+    try {
+      const stepUp = num(root.querySelector("#btUp").value.replace(",", ".")) ?? 5;
+      const stepDown = num(root.querySelector("#btDown").value.replace(",", ".")) ?? 2;
+      const trade = num(root.querySelector("#btTrade").value.replace(",", ".")) ?? 5;
+      const months = num(root.querySelector("#btMonths").value.replace(",", ".")) ?? 4;
+      const d = await api(`/backtest?symbol=${encodeURIComponent(sym)}&stepUpPct=${stepUp}&stepDownPct=${stepDown}&tradePct=${trade}&months=${months}`);
+      out.innerHTML = renderBacktestResult(d, currency);
+    } catch (e) { out.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    btn.textContent = "Simular"; btn.disabled = false;
+  };
+}
+
+function preview(m) {
+  const c = cur(m.q.currency);
+  const upMedian = up(m.t.median, m.p);
+  const consenso = section("Consenso de analistas", statGrid([
+    { label: "Consenso medio", value: m.t.mean != null ? `${nf(m.t.mean)} ${c}` : null, sub: m.t.mean != null ? pc(m.upMean) : null, subCls: cls(m.upMean) },
+    { label: "Mediana", value: m.t.median != null ? `${nf(m.t.median)} ${c}` : null, sub: m.t.median != null ? pc(upMedian) : null, subCls: cls(upMedian) },
+    { label: "Máximo", value: m.t.high != null ? `${nf(m.t.high)} ${c}` : null, sub: m.t.high != null ? pc(m.upHigh, 0) : null, subCls: cls(m.upHigh) },
+    { label: "Mínimo", value: m.t.low != null ? `${nf(m.t.low)} ${c}` : null, sub: m.t.low != null ? pc(m.upLow, 0) : null, subCls: cls(m.upLow) },
+    { label: "Analistas", value: m.t.analysts ?? null, sub: m.t.rating || null, subCls: clsRating(m.t.rating) },
+    { label: "Actualizado", value: m.t.updatedAt ? new Date(m.t.updatedAt).toLocaleDateString("es-ES") : null, sub: m.t.source || null },
+  ])) || `<p class="hint">Sin consenso de analistas todavía.</p>`;
+  const fundamentales = section("Fundamentales", statGrid([
+    { label: "P/E", value: m.t.pe != null ? nf(m.t.pe, 1) : null, valueCls: clsPE(m.t.pe) },
+    { label: "Fwd P/E", value: m.t.forwardPe != null ? nf(m.t.forwardPe, 1) : null, valueCls: clsPE(m.t.forwardPe) },
+    { label: "Deuda/Patrimonio", value: m.t.debtToEquity != null ? `${nf(m.t.debtToEquity, 1)} %` : null, valueCls: clsDE(m.t.debtToEquity) },
+    { label: "Deuda total", value: nfBig(m.t.totalDebt, "$") },
+    { label: "Caja", value: nfBig(m.t.totalCash, "$") },
+    { label: "ROE", value: pctFrac(m.t.returnOnEquity), valueCls: clsROE(m.t.returnOnEquity) },
+    { label: "Crecimiento ingresos", value: pctFrac(m.t.revenueGrowth), valueCls: cls(m.t.revenueGrowth) },
+    { label: "Margen bruto", value: pctFrac(m.t.grossMargins), valueCls: cls(m.t.grossMargins) },
+    { label: "Margen operativo", value: pctFrac(m.t.operatingMargins), valueCls: cls(m.t.operatingMargins) },
+    { label: "Margen neto", value: pctFrac(m.t.profitMargins), valueCls: cls(m.t.profitMargins) },
+    { label: "Flujo de caja libre", value: nfBig(m.t.freeCashflow, "$") },
+    { label: "Capex (estimado)", value: nfBig(m.t.capex, "$") },
+    { label: "200WMA (semanal)", value: m.t.wma200 != null ? `${nf(m.t.wma200)} ${c}` : null, valueCls: cls(-up(m.p, m.t.wma200)), sub: m.t.wma200 != null ? pc(up(m.p, m.t.wma200)) + (m.p < m.t.wma200 ? " (zona de compra)" : "") : null, subCls: cls(-up(m.p, m.t.wma200)) },
+    { label: "PEG", value: m.t.pegRatio != null ? nf(m.t.pegRatio, 2) : null, valueCls: clsPEG(m.t.pegRatio) },
+    { label: "Dividendo", value: m.t.dividendYield != null ? pctPlain(m.t.dividendYield) : null },
+    { label: "Ratio de liquidez", value: m.t.currentRatio != null ? nf(m.t.currentRatio, 2) : null, valueCls: clsCurrentRatio(m.t.currentRatio) },
+    { label: "Insiders", value: m.t.heldPercentInsiders != null ? pctPlain(m.t.heldPercentInsiders) : null, valueCls: clsInsiders(m.t.heldPercentInsiders) },
+    { label: "Interés en corto", value: m.t.shortPercentOfFloat != null ? pctPlain(m.t.shortPercentOfFloat) : null, valueCls: clsShortInterest(m.t.shortPercentOfFloat) },
+  ]));
+  const resultados = section("Próximos resultados", statGrid([
+    { label: "Próximo informe", value: m.t.nextEarningsDate != null ? new Date(m.t.nextEarningsDate).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) : null, sub: m.earningsDays != null ? (m.earningsDays === 0 ? "hoy" : `en ${m.earningsDays} día${m.earningsDays === 1 ? "" : "s"}`) : null, subCls: clsEarnings(m.earningsDays) },
+    { label: "EPS estimado", value: m.t.nextEarningsEpsEstimate != null ? nf(m.t.nextEarningsEpsEstimate, 2) : null },
+  ]));
+  const descripcion = section("Sobre la empresa", m.t.description ? `<p class="hint" style="margin:4px 2px 0;color:var(--ink2);line-height:1.5">${esc(m.t.description)}</p>` : "", false);
+  const objetivos = section("Tus objetivos", statGrid([
+    { label: "Mi objetivo de venta", value: m.it.myTarget != null ? `${nf(m.it.myTarget)} ${c}` : null, sub: m.it.myTarget != null ? pc(m.upMine) : null, subCls: cls(m.upMine) },
+    { label: "Comprar por debajo de", value: m.it.myBuy != null ? `${nf(m.it.myBuy)} ${c}` : null, sub: m.it.myBuy != null ? pc(m.toBuy) : null, subCls: cls(m.toBuy) },
+  ]));
+  const posicion = positionSection(m.it, m);
+  const simulador = backtestSection(m);
+  const err = [m.q.error && !m.p ? "Precio: " + m.q.error : "", !m.t.mean && m.t.error ? "Consenso: " + m.t.error : ""].filter(Boolean).join(" · ");
+  const rb = rangeBar(m);
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <img class="logo logo-lg" src="${logoUrl(m.sym)}" alt="" onerror="this.style.display='none'">
+      <div><div class="tk" style="font-size:18px">${esc(m.sym)}</div><div class="nm" style="max-width:none">${esc(m.it.name || "")}</div>${m.industry ? `<div class="nm" style="max-width:none">${esc(m.industry)}${m.sector && m.sector !== m.industry ? ` · ${esc(m.sector)}` : ""}</div>` : ""}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+      <div class="tk" style="font-size:19px">${nf(m.p)} ${c}</div>
+      <div class="${cls(m.day)}" style="font-size:13px;font-weight:600">${pc(m.day, 2)} hoy</div>
+    </div>
+    ${rb}
+    ${rb ? `<div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso</span><span><i class="lg p"></i>precio</span><span><i class="lg e"></i>mi entrada</span><span><i class="lg t"></i>mi objetivo</span></div>` : ""}
+    ${descripcion}
+    ${consenso}
+    ${fundamentales}
+    ${resultados}
+    ${objetivos}
+    ${posicion}
+    ${simulador}
+    ${err ? `<div class="err">${esc(err)}</div>` : ""}`;
+}
+
+// ───────── añadir / editar ─────────
+let searchT = null;
+function openItem(sym) {
+  const it = sym ? S.items[sym] : null;
+  const t = sym ? (S.targets[sym] || {}) : {};
+  const m = it ? metrics(sym) : null;
+  const sh = $("#sheetItem");
+  sh.innerHTML = `
+    <h2>${it ? "" : "Añadir acción"}<button class="iconbtn x" data-close>✕</button></h2>
+    ${it ? "" : `
+      <label class="f">Busca por ticker o nombre</label>
+      <input class="i" id="q" placeholder="Ej.: NVDA, Adobe, ASML…" autocomplete="off" autocapitalize="characters">
+      <div id="results"></div>`}
+    ${m ? preview(m) : ""}
+    <div id="form" style="${it ? "" : "display:none"}">
+      <input type="hidden" id="fSym" value="${esc(sym || "")}">
+      <input type="hidden" id="fName" value="${esc(it?.name || "")}">
+      ${it ? "" : positionSection(null, null)}
+      <details class="sec" style="margin-top:14px" ${it && (it.myTarget != null || it.myBuy != null || it.note) ? "open" : ""}>
+        <summary>Mi estrategia</summary>
+        <div class="two">
+          <div><label class="f">Mi objetivo de venta</label><input class="i" id="fTgt" inputmode="decimal" value="${it?.myTarget ?? ""}"></div>
+          <div><label class="f">Comprar por debajo de</label><input class="i" id="fBuy" inputmode="decimal" value="${it?.myBuy ?? ""}"></div>
+        </div>
+        <p class="hint">Precios en la moneda en que cotiza la acción (dólares para las de EE. UU.). Si se cumple, avisa.</p>
+        <label class="f">Moneda en la que cotiza ESTE ticker</label>
+        <select class="i" id="fCur">
+          <option value="" ${!it?.currency ? "selected" : ""}>Automática${m?.q?.currency ? ` (ahora: ${m.q.currency})` : ""}</option>
+          <option value="USD" ${it?.currency === "USD" ? "selected" : ""}>USD ($)</option>
+          <option value="EUR" ${it?.currency === "EUR" ? "selected" : ""}>EUR (€)</option>
+          <option value="GBP" ${it?.currency === "GBP" ? "selected" : ""}>GBP (£)</option>
+          <option value="GBp" ${it?.currency === "GBp" ? "selected" : ""}>GBp (peniques)</option>
+        </select>
+        <p class="hint">Casi nunca hace falta tocarlo: se detecta sola. Cámbialo solo si sabes que se detectó mal.</p>
+        <label class="f">Nota (opcional)</label>
+        <textarea class="i" id="fNote" rows="2" placeholder="Por qué la tengo / la vigilo">${esc(it?.note || "")}</textarea>
+      </details>
+      <button class="btn" id="fSave">Guardar</button>
+      ${it ? `<button class="btn sec" id="fRefT">Actualizar consenso ahora</button><button class="btn danger" id="fDel">Eliminar</button>` : ""}
+    </div>`;
+  $("#ovItem").classList.add("on");
+  layoutRangeLabels(sh);
+  wireStatInfo(sh);
+  wirePositionSection(sh);
+  wireBacktest(sh, sym, m ? cur(m.q.currency) : "");
+  sh.querySelector("[data-close]").onclick = closeSheets;
+  if (!it) {
+    const q = $("#q"); setTimeout(() => q.focus(), 50);
+    q.oninput = () => { clearTimeout(searchT); const v = q.value.trim(); if (!v) { $("#results").innerHTML = ""; return; }
+      searchT = setTimeout(async () => {
+        try {
+          const rs = await api("/search?q=" + encodeURIComponent(v));
+          $("#results").innerHTML = rs.map(r => `<div class="res" data-s="${esc(r.symbol)}" data-n="${esc(r.name)}"><b>${esc(r.symbol)}</b><span>${esc(r.name)}</span><small>${esc(r.exchange || "")}</small></div>`).join("")
+            || `<div class="hint">Sin resultados. Puedes escribir el ticker exacto y pulsar Enter.</div>`;
+          $("#results").querySelectorAll(".res").forEach(el => el.onclick = () => pick(el.dataset.s, el.dataset.n));
+        } catch (e) { $("#results").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      }, 350); };
+    q.onkeydown = e => { if (e.key === "Enter" && q.value.trim()) pick(q.value.trim().toUpperCase(), ""); };
+  }
+  $("#fSave").onclick = saveItem;
+  if (it) {
+    $("#fDel").onclick = async () => { if (!confirmDel.armed) { confirmDel.armed = true; $("#fDel").textContent = "Pulsa otra vez para eliminar"; setTimeout(() => confirmDel.armed = false, 3000); return; }
+      S = await api("/items/" + encodeURIComponent(sym), { method: "DELETE" }); closeSheets(); render(); toast(sym + " eliminada"); };
+    $("#fRefT").onclick = async () => { $("#fRefT").textContent = "Actualizando…"; try { S = await api("/targets/refresh", { method: "POST", body: JSON.stringify({ symbol: sym }) }); openItem(sym); render(); } catch (e) { toast(e.message); } };
+  }
+}
+const confirmDel = { armed: false };
+function pick(sym, name) {
+  $("#fSym").value = sym; $("#fName").value = name || "";
+  $("#results").innerHTML = `<div class="res" style="cursor:default;border-color:var(--accent)"><b>${esc(sym)}</b><span>${esc(name || "")}</span></div>`;
+  $("#form").style.display = "";
+}
+async function saveItem() {
+  // No hay interruptor "Tengo acciones": se deduce de si hay cantidad Y precio
+  // de compra puestos (petición del usuario 2026-09-28).
+  const qtyStr = $("#fQty").value.replace(",", ".");
+  const avgStr = $("#fAvg").value.replace(",", ".");
+  const b = { symbol: $("#fSym").value, name: $("#fName").value || undefined, kind: (qtyStr && avgStr) ? "holding" : "watch",
+    qty: qtyStr, avg: avgStr, myTarget: $("#fTgt").value.replace(",", "."), myBuy: $("#fBuy").value.replace(",", "."), note: $("#fNote").value,
+    currency: $("#fCur")?.value || undefined };
+  if (!b.symbol) return toast("Elige un ticker");
+  $("#fSave").textContent = "Guardando…";
+  try { S = await api("/items", { method: "POST", body: JSON.stringify(b) }); closeSheets(); render(); toast(b.symbol + " guardada"); }
+  catch (e) { toast(e.message); $("#fSave").textContent = "Guardar"; }
+}
+
+// ───────── ajustes ─────────
+function openSettings(needToken) {
+  const st = S?.settings || {};
+  $("#sheetSettings").innerHTML = `
+    <h2>Ajustes<button class="iconbtn x" data-close>✕</button></h2>
+    <label class="f">Contraseña de la app (APP_TOKEN)</label>
+    <input class="i" id="sTok" type="password" value="${esc(token)}" placeholder="La que pusiste al instalar">
+    ${needToken ? `<p class="hint r">Introduce la contraseña para conectar con tu servidor.</p>` : ""}
+    <button class="btn" id="sTokSave">Guardar contraseña</button>
+    ${S ? `
+    <label class="f">Avisar cuando el precio esté a menos de (%) del consenso o de mi objetivo</label>
+    <input class="i" id="sNear" inputmode="decimal" value="${st.nearPct ?? 3}">
+    <label class="f">Avisar cuando el precio se aleje (%) o más del consenso (en cualquier sentido)</label>
+    <input class="i" id="sFar" inputmode="decimal" value="${st.farPct ?? 50}">
+    <label class="f">Avisar si el consenso de analistas cambia más de (%)</label>
+    <input class="i" id="sCons" inputmode="decimal" value="${st.consensusChangePct ?? 1}">
+    <div class="toggle"><span>Avisar al cruzar mi precio de entrada</span><input type="checkbox" id="sEntry" ${st.entryAlerts ? "checked" : ""}></div>
+    <div class="toggle"><span>Silencio nocturno (00:00–07:00)</span><input type="checkbox" id="sQuiet" ${st.quietNight ? "checked" : ""}></div>
+    <button class="btn" id="sSave">Guardar ajustes</button>
+    <button class="btn sec" id="sTest">Enviar notificación de prueba</button>
+    <label class="f" style="margin-top:22px">Importar varias de golpe</label>
+    <textarea class="i" id="sImp" rows="5" placeholder="Una por línea: TICKER, cantidad, precio medio, objetivo venta, precio compra&#10;NVDA, 16, 204.55, 240&#10;MSFT, 1.5, 386.59&#10;ADBE (solo ticker = watchlist)"></textarea>
+    <button class="btn sec" id="sImpBtn">Importar</button>
+    <button class="btn sec" id="sAllT">Actualizar todos los consensos</button>
+    <button class="btn sec" id="sDiag">Diagnóstico de fuentes de datos</button>
+    <pre id="diagOut" style="white-space:pre-wrap;font-size:11px;color:var(--ink2)"></pre>` : ""}`;
+  $("#ovSettings").classList.add("on");
+  $("#sheetSettings [data-close]").onclick = closeSheets;
+  $("#sTokSave").onclick = async () => { token = $("#sTok").value.trim(); LS.set("token", token); try { await load(); closeSheets(); toast("Conectado"); } catch (e) { toast(e.message); } };
+  if (!S) return;
+  $("#sSave").onclick = async () => { S = await api("/settings", { method: "POST", body: JSON.stringify({ nearPct: $("#sNear").value.replace(",", "."), farPct: $("#sFar").value.replace(",", "."), consensusChangePct: $("#sCons").value.replace(",", "."), entryAlerts: $("#sEntry").checked, quietNight: $("#sQuiet").checked }) }); toast("Ajustes guardados"); render(); };
+  $("#sTest").onclick = async () => { try { const r = await api("/test-notification", { method: "POST" }); toast(r.ok ? "Enviada: mira ntfy" : r.error); } catch (e) { toast(e.message); } };
+  $("#sImpBtn").onclick = async () => { const text = $("#sImp").value; if (!text.trim()) return; $("#sImpBtn").textContent = "Importando…";
+    try { const r = await api("/import", { method: "POST", body: JSON.stringify({ text }) }); S = r.state; toast(`${r.added.length} importadas. Los consensos se completan en los próximos minutos.`); closeSheets(); render(); }
+    catch (e) { toast(e.message); $("#sImpBtn").textContent = "Importar"; } };
+  $("#sAllT").onclick = async () => { $("#sAllT").textContent = "Actualizando…"; try { S = await api("/targets/refresh", { method: "POST", body: "{}" }); render(); toast("Consensos actualizados"); } catch (e) { toast(e.message); } $("#sAllT").textContent = "Actualizar todos los consensos"; };
+  $("#sDiag").onclick = async () => { $("#diagOut").textContent = "Probando…"; try { const d = await api("/diag?symbol=" + (Object.keys(S.items)[0] || "AAPL")); $("#diagOut").textContent = JSON.stringify(d, null, 1); } catch (e) { $("#diagOut").textContent = e.message; } };
+}
+function closeSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
+document.querySelectorAll(".overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeSheets(); }));
+
+// ───────── eventos ─────────
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; LS.set("tab", tab); render(); });
+$("#sortSel").onchange = e => { sortKey = e.target.value; LS.set("sort", sortKey); render(); };
+$("#sortDir").onclick = () => { sortDesc = !sortDesc; LS.set("desc", sortDesc); render(); };
+$("#indSel").onchange = e => { indFilter = e.target.value; LS.set("indFilter", indFilter); render(); };
+$("#btnAdd").onclick = () => S ? openItem(null) : openSettings(true);
+$("#btnSettings").onclick = () => openSettings(false);
+// Este botón fuerza TODO (precios y consenso/fundamentales/200WMA de cada
+// símbolo, no solo lo caducado) — antes solo refrescaba precios y el usuario
+// tenía que ir acción por acción para ver datos nuevos, lo cual no tenía
+// sentido como botón "de arriba" (petición del usuario 2026-09-27).
+$("#btnRefresh").onclick = async () => { const b = $("#btnRefresh"); b.style.opacity = .5; try { S = await api("/refresh", { method: "POST", body: JSON.stringify({ full: true }) }); render(); toast("Todo actualizado (precios y fundamentales)"); } catch (e) { toast(e.message); } b.style.opacity = 1; };
+
+async function load() { S = await api("/state"); render(); }
+render();
+if (!token) openSettings(true); else load().catch(e => { $("#statusTxt").textContent = e.message; });
+setInterval(() => { if (token && document.visibilityState === "visible") load().catch(() => {}); }, 60000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && token) load().catch(() => {}); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+</script>
+</body>
+</html>

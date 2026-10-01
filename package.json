@@ -1,0 +1,14 @@
+{
+  "name": "radar-cartera",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
