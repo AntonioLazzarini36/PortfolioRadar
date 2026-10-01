@@ -5,6 +5,27 @@ casi en tiempo real (incl. pre-market/after-hours), consenso de analistas, tus p
 objetivos y notificaciones push. Ver `radar-cartera-spec.md` para la especificación
 completa. PWA sin frameworks + Cloudflare Worker (gratis) + KV + cron cada 5 min.
 
+> Capturas con datos simulados (`MOCK=1`), no mi cartera real.
+
+<p>
+  <img src="docs/screenshot-lista.jpg" alt="Lista de acciones con consenso, P/E, P/L y distribución por sector" width="48%">
+  <img src="docs/screenshot-resultados.png" alt="Ficha de una acción con fundamentales y próximos resultados" width="48%">
+</p>
+
+## Qué hace
+
+- Precio casi en tiempo real (pre-market/after-hours incluidos), consenso de analistas,
+  P/E, decenas de fundamentales (deuda, márgenes, ROE, PEG, insiders, interés en corto...)
+  y **fecha de los próximos resultados** — todo gratis, sin claves de pago obligatorias.
+- Alertas push (ntfy) cuando el precio se acerca o supera el consenso, tu objetivo de
+  venta/compra, o se aleja mucho de lo que opinan los analistas — con histéresis para no
+  machacar con el mismo aviso.
+- Posiciones (P/L, valor) convertidas también a EUR para quien invierte en USD pero
+  piensa en euros.
+- Distribución de la cartera por sector/industria, filtro y orden por cualquier métrica.
+- Simulador de estrategia "vender X% arriba, recomprar Y% abajo" sobre el histórico real.
+- Instalable como PWA en el móvil (Android/iOS), con notificaciones nativas vía ntfy.
+
 ## Probar en local (sin desplegar)
 
 ```
