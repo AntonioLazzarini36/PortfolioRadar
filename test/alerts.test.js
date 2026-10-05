@@ -127,6 +127,53 @@ test("hitMyBuy: dispara al bajar del precio de compra y rearma con margen", asyn
   assert.equal(titlesFor(s).filter((t) => t.includes("en tu precio de compra")).length, 2);
 });
 
+test("rule() con remindMs: no repite de inmediato, pero sí una vez pasado el intervalo, mientras se mantiene activa", () => {
+  const s = { flags: {} };
+  const DAY = 24 * 3600 * 1000;
+  let t = 1_000_000;
+  assert.equal(rule(s, "x", true, false, t, DAY), true);    // entra -> dispara
+  assert.equal(rule(s, "x", true, false, t + 1000, DAY), false); // se mantiene, poco después -> no repite
+  assert.equal(rule(s, "x", true, false, t + DAY - 1, DAY), false); // justo antes del día -> no repite
+  assert.equal(rule(s, "x", true, false, t + DAY, DAY), true);  // pasado el día -> recordatorio
+  assert.equal(rule(s, "x", true, false, t + DAY + 10, DAY), false); // de nuevo tras el recordatorio -> calla
+});
+
+test("hitMyBuy: además de disparar al entrar, recuerda una vez al día mientras se mantiene por debajo", async () => {
+  const s = baseState({ item: { myBuy: 190 } });
+  s.market.NVDA.price = 188;
+  await evaluateAlerts(noNotifyEnv, s, "NVDA"); // 1er aviso
+  assert.equal(titlesFor(s).filter((t) => t.includes("en tu precio de compra")).length, 1);
+
+  await evaluateAlerts(noNotifyEnv, s, "NVDA"); // segundos después, se mantiene -> no repite
+  assert.equal(titlesFor(s).filter((t) => t.includes("en tu precio de compra")).length, 1);
+
+  s.flags["NVDA:hitMyBuy:ts"] -= 25 * 3600 * 1000; // simula que ha pasado más de un día
+  await evaluateAlerts(noNotifyEnv, s, "NVDA");
+  assert.equal(titlesFor(s).filter((t) => t.includes("en tu precio de compra")).length, 2, "recuerda pasado un día aunque siga en el mismo sitio");
+});
+
+test("avisos escalonados bajo el precio de compra: dispara al momento al profundizar de tramo (−5%, −10%, −15%…)", async () => {
+  // avg se anula a propósito para que el aviso de "precio medio" no se solape con el de "precio de compra"
+  const s = baseState({ item: { myBuy: 200, avg: undefined } });
+  const at = async (price) => { s.market.NVDA.price = price; await evaluateAlerts(noNotifyEnv, s, "NVDA"); };
+
+  await at(192); // −4 % -> todavía no llega al primer tramo (5 %)
+  assert.equal(titlesFor(s).filter((t) => t.includes("ha caído más de un")).length, 0);
+
+  await at(190); // −5 % -> primer tramo
+  assert.equal(titlesFor(s).filter((t) => t.includes("ha caído más de un 5 %")).length, 1);
+
+  await at(188); // −6 %, mismo tramo -> no repite de inmediato
+  assert.equal(titlesFor(s).filter((t) => t.includes("ha caído más de un 5 %")).length, 1);
+
+  await at(180); // −10 % -> profundiza de tramo, avisa al momento
+  assert.equal(titlesFor(s).filter((t) => t.includes("ha caído más de un 10 %")).length, 1);
+
+  await at(195); // recupera por encima del primer tramo -> se limpia el estado
+  await at(180); // vuelve a caer un 10 % -> segundo aviso de ese tramo
+  assert.equal(titlesFor(s).filter((t) => t.includes("ha caído más de un 10 %")).length, 2);
+});
+
 test("belowEntry: avisa al cruzar el precio de entrada en cualquier sentido, con margen de 0.5%", async () => {
   // objetivos/consenso elegidos a propósito para no disparar otras reglas a la vez
   // (mean a un 16 % de distancia: ni "cerca" del 3 % ni "muy alejado" del 50 %)
