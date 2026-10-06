@@ -21,7 +21,9 @@ completa. PWA sin frameworks + Cloudflare Worker (gratis) + KV + cron cada 5 min
   venta/compra, o se aleja mucho de lo que opinan los analistas — con histéresis para no
   machacar con el mismo aviso.
 - Posiciones (P/L, valor) convertidas también a EUR para quien invierte en USD pero
-  piensa en euros.
+  piensa en euros. Si indicas cuánto gastaste realmente en euros al comprar (dato de tu
+  bróker), la ganancia en EUR se calcula exacta en vez de aproximarla con la tasa de
+  cambio de hoy.
 - Distribución de la cartera por sector/industria, filtro y orden por cualquier métrica.
 - Simulador de estrategia "vender X% arriba, recomprar Y% abajo" sobre el histórico real.
 - Instalable como PWA en el móvil (Android/iOS), con notificaciones nativas vía ntfy.
