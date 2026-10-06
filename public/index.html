@@ -242,13 +242,22 @@ function metrics(sym) {
   const p = q.price;
   const val = it.qty && p != null ? it.qty * p : null;
   const plAbs = it.avg && it.qty && p != null ? (p - it.avg) * it.qty : null;
+  const valueEur = toEur(val, q.currency);
+  // Si el usuario puso lo que realmente gastó en euros (dato exacto de su
+  // bróker, p. ej. Trading212), la ganancia en EUR se calcula contra ESE coste
+  // real en vez de convertir la ganancia en USD con la tasa de cambio de HOY
+  // — así refleja que el euro se ha movido desde que compró, no solo el precio
+  // de la acción (petición del usuario 2026-10-06: podía estar en rojo en USD
+  // pero en verde de verdad en EUR, y la conversión aproximada no lo mostraba).
+  const plAbsEurReal = (it.costEur != null && valueEur != null) ? (valueEur - it.costEur) : null;
+  const plAbsEur = plAbsEurReal ?? toEur(plAbs, q.currency);
   return {
     sym, it, q, t, p,
     upMean: up(t.mean, p), upHigh: up(t.high, p), upLow: up(t.low, p),
     upMine: up(it.myTarget, p), toBuy: up(it.myBuy, p),
     pl: up(p, it.avg), plAbs,
     day: up(p, q.prevClose), value: val, analysts: t.analysts ?? null, pe: t.pe ?? null,
-    valueEur: toEur(val, q.currency), plAbsEur: toEur(plAbs, q.currency),
+    valueEur, plAbsEur, plEurExact: plAbsEurReal != null,
     // Más fundamentales ordenables (petición del usuario 2026-09-27): distancia
     // al 200WMA (negativo = por debajo, "zona de compra"), PEG, ROE, deuda/
     // patrimonio, insiders e interés en corto — mismos campos que ya se
@@ -348,7 +357,8 @@ function render() {
     hold.forEach(m => {
       if (m.valueEur == null) { if (m.value != null) unconverted++; return; }
       totalValueEur += m.valueEur;
-      totalCostEur += toEur((m.it.avg || 0) * (m.it.qty || 0), m.q.currency) || 0;
+      // Usa el coste real en euros si se indicó (ver metrics()); si no, la aproximación de siempre.
+      totalCostEur += (m.it.costEur != null ? m.it.costEur : toEur((m.it.avg || 0) * (m.it.qty || 0), m.q.currency)) || 0;
     });
     const g = up(totalValueEur, totalCostEur);
     head += `<div class="legend" style="font-size:12.5px;color:var(--ink2)">Valor total (EUR): <b>${nf(totalValueEur, 0)} €</b> <span class="${cls(g)}">${pc(g)}</span>${unconverted ? ` · <span class="mut">${unconverted} sin convertir</span>` : ""}</div>`;
@@ -502,7 +512,7 @@ const METRIC_INFO = {
   "Ganancia": "Cuánto has ganado o perdido desde que compraste, en % y en la moneda de la acción.",
   "Valor de la posición": "Cuánto vale hoy tu posición completa (cantidad × precio actual), en la moneda en la que cotiza la acción.",
   "Valor (EUR)": "Lo mismo que el valor de la posición, convertido a euros al tipo de cambio actual.",
-  "Ganancia (EUR)": "Tu ganancia o pérdida convertida a euros.",
+  "Ganancia (EUR)": "Tu ganancia o pérdida en euros. Si indicaste cuánto gastaste en euros al comprar, es exacta: valor actual en euros menos esos euros gastados. Si no, es una aproximación (tu ganancia en la moneda de la acción convertida con la tasa de cambio de hoy), que puede no coincidir en signo con lo que ves en tu bróker si el euro se ha movido mucho desde que compraste.",
 };
 function statGrid(cells) {
   const visible = cells.filter((c) => c.value != null);
@@ -602,12 +612,15 @@ function positionSection(it, m) {
   const inputsHtml = `<div class="two">
       <div><label class="f">Cantidad</label><input class="i" id="fQty" inputmode="decimal" value="${it?.qty ?? ""}"></div>
       <div><label class="f">Mi precio de compra (medio)</label><input class="i" id="fAvg" inputmode="decimal" value="${it?.avg ?? ""}"></div>
-    </div>`;
+    </div>
+    <label class="f">Euros gastados en total (opcional)</label>
+    <input class="i" id="fCostEur" inputmode="decimal" value="${it?.costEur ?? ""}" placeholder="Lo que pusiste realmente en tu bróker, p. ej. Trading212">
+    <p class="hint">Si lo rellenas, la Ganancia (EUR) se calcula exacta contra lo que gastaste de verdad, en vez de aproximarla con la tasa de cambio de hoy.</p>`;
   const statsHtml = (hasPos && m) ? statGrid([
     { label: "Ganancia", value: m.pl != null ? pc(m.pl) : null, valueCls: clsPL(m.pl), sub: m.plAbs != null ? `${m.plAbs >= 0 ? "+" : ""}${nf(m.plAbs)} ${c}` : null, subCls: clsPL(m.pl) },
     { label: "Valor de la posición", value: m.value != null ? `${nf(m.value, 0)} ${c}` : null },
     { label: "Valor (EUR)", value: m.valueEur != null ? `${nf(m.valueEur, 0)} €` : null },
-    { label: "Ganancia (EUR)", value: m.plAbsEur != null ? `${m.plAbsEur >= 0 ? "+" : ""}${nf(m.plAbsEur, 0)} €` : null, valueCls: clsPL(m.plAbsEur) },
+    { label: "Ganancia (EUR)", value: m.plAbsEur != null ? `${m.plAbsEur >= 0 ? "+" : ""}${nf(m.plAbsEur, 0)} €` : null, valueCls: clsPL(m.plAbsEur), sub: m.plAbsEur != null ? (m.plEurExact ? "exacta" : "aprox., con la tasa de hoy") : null, subCls: "mut" },
   ]) : "";
   const body = hasPos
     ? `<div id="holdFields">${inputsHtml}</div>${statsHtml}`
@@ -822,6 +835,7 @@ async function saveItem() {
   const avgStr = $("#fAvg").value.replace(",", ".");
   const b = { symbol: $("#fSym").value, name: $("#fName").value || undefined, kind: (qtyStr && avgStr) ? "holding" : "watch",
     qty: qtyStr, avg: avgStr, myTarget: $("#fTgt").value.replace(",", "."), myBuy: $("#fBuy").value.replace(",", "."), note: $("#fNote").value,
+    costEur: $("#fCostEur")?.value.replace(",", ".") || "",
     currency: $("#fCur")?.value || undefined };
   if (!b.symbol) return toast("Elige un ticker");
   $("#fSave").textContent = "Guardando…";

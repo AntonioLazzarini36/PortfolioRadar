@@ -35,6 +35,13 @@ test("cleanItem: una moneda explícita en el body manda sobre la ya guardada", (
   assert.equal(updated.currency, "EUR");
 });
 
+test("cleanItem: costEur (euros reales gastados) se normaliza y se conserva si no viene en el body", () => {
+  const prev = cleanItem({ symbol: "INTU", qty: "2", avg: "600", costEur: "1050.30" });
+  assert.equal(prev.costEur, 1050.30);
+  const updated = cleanItem({ symbol: "INTU", qty: 2 }, prev);
+  assert.equal(updated.costEur, 1050.30);
+});
+
 test("parseImportLine acepta coma, punto y coma y tabulador como separador", () => {
   assert.deepEqual(parseImportLine("NVDA, 16, 204.55, 240"), { sym: "NVDA", qty: "16", avg: "204.55", tgt: "240", buy: undefined });
   assert.deepEqual(parseImportLine("MSFT;1.5;386.59"), { sym: "MSFT", qty: "1.5", avg: "386.59", tgt: undefined, buy: undefined });

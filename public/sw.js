@@ -2,7 +2,7 @@
 // Cachea el "shell" de la PWA para que sea instalable y arranque offline.
 // /api/* nunca se cachea (network-first, sin caché): los datos deben ser siempre frescos.
 
-const CACHE = "radar-cartera-shell-v28";
+const CACHE = "radar-cartera-shell-v29";
 const SHELL = ["/", "/sort.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {

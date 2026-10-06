@@ -47,6 +47,9 @@ function cleanItem(b, prev = {}) {
     avg: num(b.avg ?? prev.avg),
     myTarget: num(b.myTarget ?? prev.myTarget),
     myBuy: num(b.myBuy ?? prev.myBuy),
+    // Euros reales gastados al comprar (dato exacto de tu bróker, p. ej. Trading212),
+    // para una ganancia en EUR real en vez de la aproximación con la tasa de hoy — ver CLAUDE.md.
+    costEur: num(b.costEur ?? prev.costEur),
     note: (b.note ?? prev.note ?? "").toString().slice(0, 300),
     // "" o ausente = automático (el servidor lo rellena con la moneda que reporte
     // la cotización); un valor explícito (p. ej. el usuario cambió el selector de
