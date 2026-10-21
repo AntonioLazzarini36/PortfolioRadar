@@ -183,7 +183,20 @@ async function runCycle(env, { forceQuotes = false, forceTargets = false } = {})
 // extracto (confirmado mirando el PDF real, 2026-10-21) — así que el import
 // solo toca `qty` (y rellena `isin` la primera vez), nunca `avg`/`costEur`;
 // decisión explícita del usuario, no una limitación a ocultar.
-const normalizeName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Quita puntuación y sufijos corporativos habituales antes de comparar — el
+// nombre de Trading212 ("Microsoft Corp", "ASML Holding NV") casi nunca
+// coincide carácter a carácter con el que el usuario ya tenía guardado
+// ("Microsoft Corporation", "ASML Holding N.V."), así que sin esto casi
+// ningún emparejamiento por nombre funcionaba nunca (reportado por el usuario
+// 2026-10-21: "solo me ha leído 5 de 20" — el problema no era la lectura, era
+// que el nombre no cuadraba exacto).
+const COMPANY_SUFFIXES = /\b(corporation|corp|incorporated|inc|company|co|limited|ltd|plc|group|holdings?|technologies|tech|n\s*v|s\s*a|a\s*g|s\s*e)\b/g;
+const normalizeName = (s) => String(s || "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, " ")
+  .replace(COMPANY_SUFFIXES, " ")
+  .replace(/\s+/g, " ")
+  .trim();
 
 // Una misma acción puede aparecer repetida en el extracto con distinta divisa
 // (p. ej. Amazon comprado una vez en USD y otra en EUR — mismo ISIN, mismo

@@ -941,7 +941,7 @@ async function ocrRun(worker, canvas, viewport, items, psm, whitelist) {
   crop.getContext("2d").drawImage(canvas, rx0, ry0, rw, rh, 0, 0, crop.width, crop.height);
   await worker.setParameters({ tessedit_char_whitelist: whitelist, tessedit_pageseg_mode: psm });
   const { data } = await worker.recognize(crop);
-  return (data.text || "").replace(/[^0-9A-Z]/g, "");
+  return (data.text || "").replace(/[^0-9A-Za-z]/g, "");
 }
 // Separa un "token" (secuencia de fragmentos del PDF sin espacio real entre
 // medio — p. ej. todo un ISIN, o toda una cantidad) en tramos: texto real tal
@@ -960,6 +960,7 @@ async function assembleToken(parts, canvas, viewport, worker, whitelist, psm) {
   return out;
 }
 const ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", DIGITS = "0123456789";
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 // Extrae {name, isin, qty, currency} de cada fila válida del extracto. Dos
 // workers de tesseract.js (motor LSTM por defecto y el "legacy", oem 0) se
 // usan como segundas/terceras opiniones: cada uno falla distinto con esta
@@ -1000,7 +1001,13 @@ async function extractTrading212Holdings(file, onProgress) {
         const isinTok = tokens[curIdx - 2], qtyTok = tokens[curIdx - 1], nameToks = tokens.slice(0, curIdx - 2);
         if (!nameToks.length) continue;
         const isinParts = splitRuns(isinTok), qtyParts = splitRuns(qtyTok);
-        const name = nameToks.map((t) => t.map((x) => x.str).join("")).join(" ").replace(/\u0000/g, "?");
+        // El nombre también puede traer algún glifo roto (no solo los dígitos
+        // — p. ej. la "a" de "Oracle" en este mismo extracto), así que se rellena
+        // igual con OCR en vez de dejar un "?" — el nombre solo se usa como
+        // apoyo para emparejar con un ítem ya existente la primera vez (antes de
+        // tener el ISIN guardado), así que un fallo aquí como mucho hace que esa
+        // fila cueste un "Buscar y añadir" de más, nunca escribe un dato mal.
+        const name = (await Promise.all(nameToks.map((t) => assembleToken(splitRuns(t), canvas, viewport, w1, LETTERS, "8")))).join(" ");
         const currency = tokens[curIdx][0].str;
 
         let isin = await assembleToken(isinParts, canvas, viewport, w1, ALNUM, "8");

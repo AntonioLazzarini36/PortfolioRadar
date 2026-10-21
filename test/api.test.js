@@ -159,6 +159,19 @@ test("matchHoldings: sin ISIN guardado, empareja por nombre normalizado (primer 
   assert.equal(matched[0].symbol, "ORCL");
 });
 
+test("matchHoldings: el nombre tolera variantes de sufijo corporativo (Corp/Corporation, NV/N.V.)", () => {
+  const items = {
+    MSFT: { symbol: "MSFT", name: "Microsoft Corporation", qty: 1, isin: null },
+    ASML: { symbol: "ASML", name: "ASML Holding N.V.", qty: 1, isin: null },
+  };
+  const { matched, unmatched } = matchHoldings(items, [
+    { isin: "US5949181045", name: "Microsoft Corp", qty: 1.5, currency: "USD" },
+    { isin: "NL0010273215", name: "ASML Holding NV", qty: 0.3, currency: "EUR" },
+  ]);
+  assert.equal(unmatched.length, 0);
+  assert.deepEqual(matched.map((m) => m.symbol).sort(), ["ASML", "MSFT"]);
+});
+
 test("matchHoldings: lo que no encuentra pareja (ticker nuevo) va a unmatched, no se crea solo", () => {
   const { matched, unmatched } = matchHoldings({}, [{ isin: "US4612021034", name: "Intuit Inc", qty: 5, currency: "USD" }]);
   assert.equal(matched.length, 0);
