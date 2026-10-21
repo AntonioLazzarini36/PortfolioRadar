@@ -1083,6 +1083,177 @@ function wireHoldingsImport(root) {
   };
 }
 
+// ───────── importar precio medio + coste real desde el "Activity statement" (PDF) ─────────
+// A diferencia del "Confirmation of holdings" (solo cantidad), este extracto
+// de Trading212 SÍ trae precio medio por posición y el retorno/valor en la
+// divisa de la cuenta (de donde sale costEur) — comprobado a mano contra un
+// extracto real 2026-10-21, página "Invest account - open positions summary".
+// Misma fuente rota que el otro PDF, pero la fila tiene 10 columnas fijas en
+// vez de un ancla de divisa suelta: TICKER, ISIN, QUANTITY, AVERAGE PRICE,
+// PRICE, RETURN(instr), VALUE(instr), FX RATE, RETURN(cuenta), VALUE(cuenta)
+// — solo se usan las que no son PRICE/RETURN(instr)/VALUE(instr)/FX RATE.
+// Reutiliza loadPdfJs/loadTesseract/isValidIsin/splitRuns/assembleToken ya
+// definidos para el otro importador.
+// Como assembleToken, pero recortando UN carácter roto a la vez en vez de un
+// tramo entero de golpe — una estrategia de recorte distinta, no solo un
+// motor distinto. Hace falta porque un tramo de varios dígitos recortado de
+// una vez puede hacer que los DOS motores se equivoquen igual (visto a mano:
+// "386.58666667" leído como "1386.58666667" por w1 Y w0 a la vez, con el
+// tramo de 3 dígitos recortado junto) — eso hace inútil comparar solo motores
+// distintos sobre el MISMO recorte ambiguo. Comparando contra una tercera
+// fuente de evidencia independiente (otro recorte, no solo otro motor) se
+// detecta ese caso en vez de confiar en un "empate" que en realidad comparten
+// el mismo error.
+async function assembleTokenPerChar(parts, canvas, viewport, worker, whitelist) {
+  let out = "";
+  for (const part of parts) {
+    if (part.lit != null) { out += part.lit; continue; }
+    for (const item of part.run) out += await ocrRun(worker, canvas, viewport, [item], "8", whitelist);
+  }
+  return out;
+}
+async function resolveVerifiedNumber(tok, canvas, viewport, w1, w0) {
+  const parts = splitRuns(tok);
+  const clean = (s) => s.replace(/,/g, "");
+  const candidates = [];
+  const agreed = () => {
+    for (let i = 0; i < candidates.length; i++)
+      for (let j = i + 1; j < candidates.length; j++)
+        if (candidates[i] === candidates[j] && candidates[i] !== "") return candidates[i];
+    return null;
+  };
+  candidates.push(await assembleToken(parts, canvas, viewport, w1, DIGITS, "8"));
+  candidates.push(await assembleTokenPerChar(parts, canvas, viewport, w1, DIGITS));
+  let hit = agreed();
+  if (!hit) { candidates.push(await assembleToken(parts, canvas, viewport, w0, DIGITS, "8")); hit = agreed(); }
+  if (!hit) { candidates.push(await assembleTokenPerChar(parts, canvas, viewport, w0, DIGITS)); hit = agreed(); }
+  return hit ? { ok: true, value: parseFloat(clean(hit)) } : { ok: false, value: null };
+}
+async function extractTrading212Positions(file, onProgress) {
+  const [pdfjsLib, Tesseract] = await Promise.all([loadPdfJs(), loadTesseract()]);
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const w1 = await Tesseract.createWorker("eng", 1);
+  const w0 = await Tesseract.createWorker("eng", 0);
+  const positions = [], uncertain = [];
+  try {
+    let pageNum = null;
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      if (content.items.map((i) => i.str).join(" ").includes("Open positions")) { pageNum = p; break; }
+    }
+    if (pageNum == null) return { positions, uncertain };
+    onProgress?.(`Leyendo posiciones abiertas (página ${pageNum} de ${doc.numPages})…`);
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: T212_SCALE });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    const content = await page.getTextContent();
+    const rows = new Map();
+    for (const item of content.items) {
+      const key = Math.round(item.transform[5] / 2) * 2;
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push(item);
+    }
+    for (const y of [...rows.keys()].sort((a, b) => b - a)) {
+      const items = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
+      const tokens = []; let cur = [];
+      for (const it of items) { if (it.str === " ") { if (cur.length) tokens.push(cur); cur = []; } else cur.push(it); }
+      if (cur.length) tokens.push(cur);
+      if (tokens.length !== 10) continue;
+      const [tickerTok, isinTok, qtyTok, avgTok, , , , , retAcctTok, valAcctTok] = tokens;
+      // El prefijo de 2 letras del ISIN ("US", "NL"...) puede venir como UN
+      // solo fragmento de 2 caracteres (no dos fragmentos de 1), a diferencia
+      // de los dígitos rotos que sí van siempre uno por fragmento — por eso se
+      // compara la suma de caracteres (12 en total), no el número de
+      // fragmentos, y el prefijo se valida sobre el primer fragmento real.
+      const isinCharCount = isinTok.reduce((n, it) => n + it.str.length, 0);
+      if (isinCharCount !== 12 || !/^[A-Z]{1,2}$/.test(isinTok[0].str || "")) continue;
+
+      let ticker = tickerTok.map((x) => x.str).join("");
+      if (tickerTok.some((x) => x.str === "\u0000")) ticker = await assembleToken(splitRuns(tickerTok), canvas, viewport, w1, LETTERS, "8");
+      if (!/^[A-Z.]{1,8}$/.test(ticker)) continue;
+
+      let isin = await assembleToken(splitRuns(isinTok), canvas, viewport, w1, ALNUM, "8");
+      let isinOk = isValidIsin(isin);
+      if (!isinOk) { isin = await assembleToken(splitRuns(isinTok), canvas, viewport, w0, ALNUM, "8"); isinOk = isValidIsin(isin); }
+      if (!isinOk) { isin = await assembleToken(splitRuns(isinTok), canvas, viewport, w1, ALNUM, "7"); isinOk = isValidIsin(isin); }
+
+      const qty = await resolveVerifiedNumber(qtyTok, canvas, viewport, w1, w0);
+
+      const avgCurrency = avgTok[0].str === "€" ? "EUR" : avgTok[0].str === "$" ? "USD" : null;
+      const avg = avgCurrency ? await resolveVerifiedNumber(avgTok.slice(1), canvas, viewport, w1, w0) : { ok: false };
+
+      // Un "\u0000" justo antes del símbolo de divisa es el signo "-" (roto
+      // en esta fuente igual que los dígitos) — se sabe por posición, sin
+      // falta de OCR: el valor de una posición no puede ser negativo, así
+      // que solo RETURN lleva signo, nunca VALUE.
+      let retNegative = false, retTok = retAcctTok;
+      if (retTok[0]?.str === "\u0000" && (retTok[1]?.str === "€" || retTok[1]?.str === "$")) { retNegative = true; retTok = retTok.slice(1); }
+      const ret = await resolveVerifiedNumber(retTok.slice(1), canvas, viewport, w1, w0);
+      const val = await resolveVerifiedNumber(valAcctTok.slice(1), canvas, viewport, w1, w0);
+      const costEur = (ret.ok && val.ok) ? (val.value - (retNegative ? -ret.value : ret.value)) : null;
+
+      if (!isinOk || !qty.ok) { uncertain.push({ name: ticker, isin, qty: qty.ok ? qty.value : null }); continue; }
+      positions.push({ ticker, isin, qty: qty.value, avg: avg.ok ? avg.value : null, avgCurrency, costEur });
+    }
+  } finally { await w1.terminate(); await w0.terminate(); }
+  return { positions, uncertain };
+}
+function renderPositionsPreview(matched, unmatched, uncertain) {
+  const rows = matched.map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.symbol)}</b><span>${h.skippedAvg ? esc(h.skippedAvg) : ""}</span>
+      <small>qty ${nf(h.oldQty, 4)} → <b class="${h.newQty !== h.oldQty ? "g" : ""}">${nf(h.newQty, 4)}</b>
+        ${h.newAvg != null ? ` · medio ${nf(h.oldAvg)} → <b class="g">${nf(h.newAvg)}</b>` : ""}
+        ${h.newCostEur != null ? ` · coste ${h.oldCostEur != null ? nf(h.oldCostEur, 0) + " → " : ""}<b class="g">${nf(h.newCostEur, 0)} €</b>` : ""}</small>
+    </div>`).join("");
+  const un = unmatched.map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.ticker)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
+      <button class="btn sec" style="padding:4px 10px;font-size:12px" data-addisin="${esc(h.isin)}">Buscar y añadir</button>
+    </div>`).join("");
+  const unc = (uncertain || []).map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.name)}</b><span>${esc(h.isin || "")} · ${h.qty != null ? nf(h.qty, 4) : "—"}</span>
+    </div>`).join("");
+  return `${matched.length ? `<p class="hint">Se actualizarán estas ${matched.length}:</p>${rows}` : `<p class="hint">Ninguna coincide con algo que ya tengas en la cartera.</p>`}
+    ${unmatched.length ? `<p class="hint" style="margin-top:10px">${unmatched.length} del extracto no están en tu cartera todavía:</p>${un}` : ""}
+    ${unc ? `<p class="hint r" style="margin-top:10px">No se pudieron leer con seguridad (revísalas a mano en el PDF):</p>${unc}` : ""}`;
+}
+function wirePositionsImport(root) {
+  const input = root.querySelector("#sPosPdf");
+  const out = root.querySelector("#sPosOut");
+  if (!input) return;
+  let pendingPositions = null;
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    out.innerHTML = `<p class="hint">Leyendo el PDF (puede tardar unos segundos)…</p>`;
+    try {
+      const { positions, uncertain } = await extractTrading212Positions(file, (msg) => { out.innerHTML = `<p class="hint">${esc(msg)}</p>`; });
+      pendingPositions = positions;
+      if (!pendingPositions.length && !uncertain.length) { out.innerHTML = `<p class="hint r">No se encontró la sección "Open positions" en este PDF — ¿es el Activity Statement?</p>`; return; }
+      const { matched, unmatched } = pendingPositions.length ? await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions }) }) : { matched: [], unmatched: [] };
+      out.innerHTML = renderPositionsPreview(matched, unmatched, uncertain) + (matched.length ? `<button class="btn" id="sPosApply" style="margin-top:10px">Confirmar e importar</button>` : "");
+      out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
+        const h = unmatched.find((u) => u.isin === b.dataset.addisin);
+        closeSheets(); openItem(null);
+        setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
+      });
+      const applyBtn = out.querySelector("#sPosApply");
+      if (applyBtn) applyBtn.onclick = async () => {
+        applyBtn.textContent = "Importando…";
+        try {
+          const r = await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions, apply: true }) });
+          await load();
+          out.innerHTML = `<p class="hint g">${r.matched.length} posiciones actualizadas.</p>`;
+          toast("Cantidad, precio medio y coste actualizados desde el extracto");
+        } catch (e) { toast(e.message); applyBtn.textContent = "Confirmar e importar"; }
+      };
+    } catch (e) { out.innerHTML = `<p class="hint r">${esc(e.message)}</p>`; }
+  };
+}
+
 function openSettings(needToken) {
   const st = S?.settings || {};
   $("#sheetSettings").innerHTML = `
@@ -1109,6 +1280,10 @@ function openSettings(needToken) {
     <p class="hint">Sube el PDF "Confirmation of holdings". Solo actualiza la cantidad de lo que ya tienes en la cartera (y recuerda el ISIN para la próxima vez) — ese PDF no trae el precio medio, así que eso lo sigues poniendo tú a mano.</p>
     <input class="i" type="file" accept="application/pdf" id="sHoldPdf">
     <div id="sHoldOut"></div>
+    <label class="f" style="margin-top:22px">Actualizar cantidad, precio medio y coste desde el Activity Statement (PDF)</label>
+    <p class="hint">Sube el "Activity statement" (no el "Confirmation of holdings") — ese sí trae tu precio medio real por posición, y de ahí se calcula también el coste real en euros. En Trading212: Historial → exportar → Activity statement.</p>
+    <input class="i" type="file" accept="application/pdf" id="sPosPdf">
+    <div id="sPosOut"></div>
     <button class="btn sec" id="sAllT">Actualizar todos los consensos</button>
     <button class="btn sec" id="sDiag">Diagnóstico de fuentes de datos</button>
     <pre id="diagOut" style="white-space:pre-wrap;font-size:11px;color:var(--ink2)"></pre>` : ""}`;
@@ -1124,6 +1299,7 @@ function openSettings(needToken) {
   $("#sAllT").onclick = async () => { $("#sAllT").textContent = "Actualizando…"; try { S = await api("/targets/refresh", { method: "POST", body: "{}" }); render(); toast("Consensos actualizados"); } catch (e) { toast(e.message); } $("#sAllT").textContent = "Actualizar todos los consensos"; };
   $("#sDiag").onclick = async () => { $("#diagOut").textContent = "Probando…"; try { const d = await api("/diag?symbol=" + (Object.keys(S.items)[0] || "AAPL")); $("#diagOut").textContent = JSON.stringify(d, null, 1); } catch (e) { $("#diagOut").textContent = e.message; } };
   wireHoldingsImport($("#sheetSettings"));
+  wirePositionsImport($("#sheetSettings"));
 }
 function closeSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
 document.querySelectorAll(".overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeSheets(); }));

@@ -3,7 +3,7 @@
 // ticker aparecen precio, sesión y consenso.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle, appendConsensusHistoryPoint, matchHoldings } from "../src/api.js";
+import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle, appendConsensusHistoryPoint, matchHoldings, matchPositions } from "../src/api.js";
 
 class FakeKV {
   constructor() { this.store = new Map(); }
@@ -205,6 +205,66 @@ test("/api/import-holdings en modo dry-run no toca el estado; con apply sí actu
   assert.equal(after.data.items.NVDA.qty, 16);
   assert.equal(after.data.items.NVDA.isin, "US67066G1040");
   assert.equal(after.data.items.NVDA.avg, 200, "el precio medio no lo toca este import");
+});
+
+test("/api/import-holdings: aplicar pasa el kind de watch a holding (si el extracto dice que la tienes, es una posición real)", async () => {
+  const env = makeEnv();
+  await call(env, "POST", "/api/items", { symbol: "NVDA", name: "NVIDIA Corp", kind: "watch" });
+  await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }], apply: true });
+  const after = await call(env, "GET", "/api/state");
+  assert.equal(after.data.items.NVDA.kind, "holding");
+});
+
+test("matchPositions: empareja por ticker exacto cuando aún no hay ISIN guardado, y propone qty+avg+costEur", () => {
+  const items = { NVDA: { symbol: "NVDA", name: "NVIDIA Corp", qty: 10, avg: 180, costEur: 1500, isin: null, currency: "USD" } };
+  const { matched, unmatched } = matchPositions(items, [
+    { ticker: "NVDA", isin: "US67066G1040", qty: 12, avg: 200.59, avgCurrency: "USD", costEur: 2234.44 },
+  ]);
+  assert.equal(unmatched.length, 0);
+  assert.deepEqual(matched[0], {
+    symbol: "NVDA", isin: "US67066G1040", ticker: "NVDA",
+    oldQty: 10, newQty: 12,
+    oldAvg: 180, newAvg: 200.59,
+    oldCostEur: 1500, newCostEur: 2234.44,
+    skippedAvg: null,
+  });
+});
+
+test("matchPositions: ISIN repetido en varias divisas (mismo valor, dos lotes) suma cantidad y coste real, pero no toca el precio medio", () => {
+  const items = { AMZN: { symbol: "AMZN", qty: 1, avg: 200, costEur: 180, isin: "US0231351067", currency: "USD" } };
+  const { matched } = matchPositions(items, [
+    { ticker: "AMZN", isin: "US0231351067", qty: 4, avg: 263.37, avgCurrency: "USD", costEur: 843.28 },
+    { ticker: "AMZ", isin: "US0231351067", qty: 3, avg: 234.5, avgCurrency: "EUR", costEur: 615.71 },
+  ]);
+  assert.equal(matched[0].newQty, 7);
+  assert.equal(matched[0].newAvg, null, "no se puede combinar un precio medio en USD con uno en EUR sin convertir");
+  assert.equal(matched[0].newCostEur, 1458.99, "el coste real en euros sí se puede sumar entre lotes aunque sean de divisas distintas");
+  assert.equal(matched[0].skippedAvg, "varias divisas en el mismo ISIN");
+});
+
+test("matchPositions: si la divisa del precio medio leído no coincide con la ya guardada, actualiza qty pero no avg", () => {
+  const items = { ASML: { symbol: "ASML", qty: 1, avg: 1400, isin: null, currency: "EUR" } };
+  const { matched } = matchPositions(items, [{ ticker: "ASML", isin: "NL0010273215", qty: 0.3, avg: 1455.4, avgCurrency: "USD", costEur: 436.67 }]);
+  assert.equal(matched[0].newQty, 0.3);
+  assert.equal(matched[0].newAvg, null);
+  assert.equal(matched[0].skippedAvg, "divisa distinta a la ya guardada");
+});
+
+test("/api/import-positions aplica qty, avg y costEur, pasa a holding, y conserva el resto del ítem", async () => {
+  const env = makeEnv();
+  await call(env, "POST", "/api/items", { symbol: "NVDA", kind: "watch", myTarget: 300 });
+  const apply = await call(env, "POST", "/api/import-positions", {
+    positions: [{ ticker: "NVDA", isin: "US67066G1040", qty: 12, avg: 200.59, avgCurrency: "USD", costEur: 2234.44 }],
+    apply: true,
+  });
+  assert.equal(apply.data.applied, true);
+  const after = await call(env, "GET", "/api/state");
+  assert.equal(after.data.items.NVDA.qty, 12);
+  assert.equal(after.data.items.NVDA.avg, 200.59);
+  assert.equal(after.data.items.NVDA.costEur, 2234.44);
+  assert.equal(after.data.items.NVDA.isin, "US67066G1040");
+  assert.equal(after.data.items.NVDA.kind, "holding");
+  assert.equal(after.data.items.NVDA.myTarget, 300, "no debe tocar campos que este import no gestiona");
 });
 
 test("/api/backtest simula la estrategia de tramos sobre una posición existente", async () => {

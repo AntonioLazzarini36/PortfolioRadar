@@ -233,6 +233,55 @@ function matchHoldings(items, holdings) {
   return { matched, unmatched };
 }
 
+// ───────── Importar precio medio + coste real desde el "Activity statement" de Trading212 (PDF) ─────────
+// A diferencia del "Confirmation of holdings", este extracto SÍ trae
+// AVERAGE PRICE por posición (y RETURN/VALUE en la divisa de la cuenta, de
+// donde se saca costEur = valueEur - plEur) — ver CLAUDE.md. El parseo/OCR se
+// hace en el navegador; aquí solo se recibe ya {ticker, isin, qty, avg,
+// avgCurrency, costEur} por fila (cualquier campo que el navegador no pudo
+// confirmar con seguridad viene como null y simplemente no se toca).
+// El ticker de Trading212 se lee limpio y es mucho más fiable que el nombre,
+// así que aquí se empareja por símbolo exacto además de por ISIN.
+function matchPositions(items, positions) {
+  const byIsin = new Map();
+  for (const p of positions) {
+    if (!p.isin) continue;
+    if (!byIsin.has(p.isin)) byIsin.set(p.isin, []);
+    byIsin.get(p.isin).push(p);
+  }
+  const matched = [], unmatched = [];
+  for (const [isin, rows] of byIsin) {
+    let item = Object.values(items).find((it) => it.isin && it.isin === isin);
+    if (!item) item = Object.values(items).find((it) => !it.isin && rows.some((r) => r.ticker && it.symbol === r.ticker.toUpperCase()));
+    if (!item) { for (const r of rows) unmatched.push({ isin, ticker: r.ticker, qty: r.qty, avg: r.avg, avgCurrency: r.avgCurrency }); continue; }
+    // Mismo ISIN en más de una fila = el mismo valor comprado en más de una
+    // divisa (p. ej. Amazon en USD y en EUR — ver mergeHoldingsByIsin). La
+    // cantidad se puede sumar siempre (es solo un número de acciones), pero el
+    // precio medio NO sin convertir ambas divisas a una común — y no hay
+    // forma fiable de saber qué tasa de cambio usar para cada lote con los
+    // datos de este documento, así que mejor no adivinar: se actualiza la
+    // cantidad igualmente, pero el precio medio/coste real se deja tal cual.
+    const totalQty = rows.reduce((s, r) => s + (r.qty || 0), 0);
+    // costEur sí es seguro sumar entre lotes aunque sean de divisas distintas
+    // (ya está expresado en euros, la divisa de la cuenta, en cada fila) —
+    // solo el precio medio (en la divisa de CADA lote) no se puede combinar
+    // sin convertir.
+    const allCostEurOk = rows.every((r) => r.costEur != null);
+    const totalCostEur = allCostEurOk ? rows.reduce((s, r) => s + r.costEur, 0) : null;
+    const mixedCurrency = rows.length > 1;
+    const row = rows[0];
+    const avgOk = !mixedCurrency && row.avg != null && (!item.currency || item.currency === row.avgCurrency);
+    matched.push({
+      symbol: item.symbol, isin, ticker: row.ticker,
+      oldQty: item.qty, newQty: totalQty,
+      oldAvg: item.avg, newAvg: avgOk ? row.avg : null,
+      oldCostEur: item.costEur, newCostEur: totalCostEur,
+      skippedAvg: mixedCurrency ? "varias divisas en el mismo ISIN" : (row.avg != null && !avgOk ? "divisa distinta a la ya guardada" : null),
+    });
+  }
+  return { matched, unmatched };
+}
+
 // ───────────────────────── Rutas /api/* ─────────────────────────
 async function handleApi(req, env, url) {
   const auth = req.headers.get("authorization") || "";
@@ -300,8 +349,29 @@ async function handleApi(req, env, url) {
     const { matched, unmatched } = matchHoldings(s.items, holdings);
     if (body?.apply) {
       for (const h of matched) {
-        const it = cleanItem({ symbol: h.symbol, qty: h.newQty, isin: h.isin }, s.items[h.symbol]);
+        // Si el extracto dice que la tienes, es una posición real — se marca
+        // "holding" aquí mismo (antes no se tocaba `kind` y un ítem que solo
+        // estaba en watchlist se quedaba sin aparecer en la pestaña "Tengo"
+        // ni en el total de cartera pese a tener ya cantidad).
+        const it = cleanItem({ symbol: h.symbol, qty: h.newQty, isin: h.isin, kind: "holding" }, s.items[h.symbol]);
         s.items[h.symbol] = it;
+      }
+      await saveState(env, s);
+    }
+    return json({ matched, unmatched, applied: !!body?.apply });
+  }
+
+  if (path === "/import-positions" && req.method === "POST") {
+    const s = await loadState(env);
+    const positions = Array.isArray(body?.positions) ? body.positions : [];
+    const { matched, unmatched } = matchPositions(s.items, positions);
+    if (body?.apply) {
+      for (const p of matched) {
+        const update = { symbol: p.symbol, qty: p.newQty, isin: p.isin, kind: "holding" };
+        if (p.newAvg != null) update.avg = p.newAvg;
+        if (p.newCostEur != null) update.costEur = p.newCostEur;
+        const it = cleanItem(update, s.items[p.symbol]);
+        s.items[p.symbol] = it;
       }
       await saveState(env, s);
     }
@@ -381,4 +451,4 @@ async function handleApi(req, env, url) {
   return json({ error: "Ruta no encontrada" }, 404);
 }
 
-export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma, appendConsensusHistoryPoint, matchHoldings };
+export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma, appendConsensusHistoryPoint, matchHoldings, matchPositions };
