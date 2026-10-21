@@ -26,6 +26,10 @@ completa. PWA sin frameworks + Cloudflare Worker (gratis) + KV + cron cada 5 min
   cambio de hoy.
 - Distribución de la cartera por sector/industria, filtro y orden por cualquier métrica.
 - Simulador de estrategia "vender X% arriba, recomprar Y% abajo" sobre el histórico real.
+- Gráfico de evolución del consenso de analistas (se construye hacia adelante, un punto
+  por día, desde que se usa la app — no hay histórico retroactivo gratis en ningún sitio).
+- Importar cantidad, precio medio y coste real desde el "Activity statement" (PDF) de
+  Trading212 — lee el PDF con OCR en el propio navegador, sin subir nada a ningún sitio.
 - Instalable como PWA en el móvil (Android/iOS), con notificaciones nativas vía ntfy.
 
 ## Probar en local (sin desplegar)
