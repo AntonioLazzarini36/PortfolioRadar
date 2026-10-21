@@ -3,7 +3,7 @@
 // ticker aparecen precio, sesión y consenso.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle, appendConsensusHistoryPoint, matchHoldings, matchPositions } from "../src/api.js";
+import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle, appendConsensusHistoryPoint, matchPositions } from "../src/api.js";
 
 class FakeKV {
   constructor() { this.store = new Map(); }
@@ -146,76 +146,7 @@ test("appendConsensusHistoryPoint: recorta al máximo de puntos", () => {
   assert.equal(history[history.length - 1].mean, 100 + 409);
 });
 
-test("matchHoldings: empareja por ISIN ya guardado y propone la nueva cantidad", () => {
-  const items = { NVDA: { symbol: "NVDA", name: "NVIDIA Corp", qty: 10, isin: "US67066G1040" } };
-  const { matched, unmatched } = matchHoldings(items, [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 12, currency: "USD" }]);
-  assert.equal(unmatched.length, 0);
-  assert.deepEqual(matched, [{ symbol: "NVDA", isin: "US67066G1040", name: "NVIDIA Corp", oldQty: 10, newQty: 12 }]);
-});
-
-test("matchHoldings: sin ISIN guardado, empareja por nombre normalizado (primer import)", () => {
-  const items = { ORCL: { symbol: "ORCL", name: "Oracle Corp", qty: 1, isin: null } };
-  const { matched } = matchHoldings(items, [{ isin: "US68389X1054", name: "Oracle Corp", qty: 1, currency: "USD" }]);
-  assert.equal(matched[0].symbol, "ORCL");
-});
-
-test("matchHoldings: el nombre tolera variantes de sufijo corporativo (Corp/Corporation, NV/N.V.)", () => {
-  const items = {
-    MSFT: { symbol: "MSFT", name: "Microsoft Corporation", qty: 1, isin: null },
-    ASML: { symbol: "ASML", name: "ASML Holding N.V.", qty: 1, isin: null },
-  };
-  const { matched, unmatched } = matchHoldings(items, [
-    { isin: "US5949181045", name: "Microsoft Corp", qty: 1.5, currency: "USD" },
-    { isin: "NL0010273215", name: "ASML Holding NV", qty: 0.3, currency: "EUR" },
-  ]);
-  assert.equal(unmatched.length, 0);
-  assert.deepEqual(matched.map((m) => m.symbol).sort(), ["ASML", "MSFT"]);
-});
-
-test("matchHoldings: lo que no encuentra pareja (ticker nuevo) va a unmatched, no se crea solo", () => {
-  const { matched, unmatched } = matchHoldings({}, [{ isin: "US4612021034", name: "Intuit Inc", qty: 5, currency: "USD" }]);
-  assert.equal(matched.length, 0);
-  assert.equal(unmatched.length, 1);
-  assert.equal(unmatched[0].isin, "US4612021034");
-});
-
-test("matchHoldings: mismo ISIN repetido con distinta divisa (lotes Trading212) suma las cantidades", () => {
-  const items = { AMZN: { symbol: "AMZN", name: "Amazon.com Inc", qty: 1, isin: "US0231351067" } };
-  const { matched } = matchHoldings(items, [
-    { isin: "US0231351067", name: "Amazon.com Inc", qty: 4, currency: "USD" },
-    { isin: "US0231351067", name: "Amazon.com Inc", qty: 3, currency: "EUR" },
-  ]);
-  assert.equal(matched.length, 1);
-  assert.equal(matched[0].newQty, 7);
-});
-
-test("/api/import-holdings en modo dry-run no toca el estado; con apply sí actualiza qty y guarda el isin", async () => {
-  const env = makeEnv();
-  await call(env, "POST", "/api/items", { symbol: "NVDA", name: "NVIDIA Corp", kind: "holding", qty: 10, avg: 200 });
-  const dry = await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }] });
-  assert.equal(dry.status, 200);
-  assert.equal(dry.data.matched[0].symbol, "NVDA");
-  assert.equal(dry.data.applied, false);
-  const stillOld = await call(env, "GET", "/api/state");
-  assert.equal(stillOld.data.items.NVDA.qty, 10, "dry-run no debe escribir nada");
-
-  const apply = await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }], apply: true });
-  assert.equal(apply.data.applied, true);
-  const after = await call(env, "GET", "/api/state");
-  assert.equal(after.data.items.NVDA.qty, 16);
-  assert.equal(after.data.items.NVDA.isin, "US67066G1040");
-  assert.equal(after.data.items.NVDA.avg, 200, "el precio medio no lo toca este import");
-});
-
-test("/api/import-holdings: aplicar pasa el kind de watch a holding (si el extracto dice que la tienes, es una posición real)", async () => {
-  const env = makeEnv();
-  await call(env, "POST", "/api/items", { symbol: "NVDA", name: "NVIDIA Corp", kind: "watch" });
-  await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }], apply: true });
-  const after = await call(env, "GET", "/api/state");
-  assert.equal(after.data.items.NVDA.kind, "holding");
-});
-
-test("matchPositions: empareja por ticker exacto cuando aún no hay ISIN guardado, y propone qty+avg+costEur", () => {
+test("matchPositions: empareja por ticker exacto cuando aún no hay ISIN guardado, y propone qty+avg+costEur, marcando changed", () => {
   const items = { NVDA: { symbol: "NVDA", name: "NVIDIA Corp", qty: 10, avg: 180, costEur: 1500, isin: null, currency: "USD" } };
   const { matched, unmatched } = matchPositions(items, [
     { ticker: "NVDA", isin: "US67066G1040", qty: 12, avg: 200.59, avgCurrency: "USD", costEur: 2234.44 },
@@ -227,7 +158,31 @@ test("matchPositions: empareja por ticker exacto cuando aún no hay ISIN guardad
     oldAvg: 180, newAvg: 200.59,
     oldCostEur: 1500, newCostEur: 2234.44,
     skippedAvg: null,
+    changed: true,
   });
+});
+
+test("matchPositions: si nada cambió de verdad (misma qty/avg/costEur), changed es false", () => {
+  const items = { NVDA: { symbol: "NVDA", qty: 12, avg: 200.59, costEur: 2234.44, isin: "US67066G1040", currency: "USD" } };
+  const { matched } = matchPositions(items, [
+    { ticker: "NVDA", isin: "US67066G1040", qty: 12, avg: 200.590001, avgCurrency: "USD", costEur: 2234.4401 },
+  ]);
+  assert.equal(matched[0].changed, false, "una diferencia de redondeo mínima no debe contar como cambio");
+});
+
+test("matchPositions: una posición que tienes en cartera pero ya no aparece en el extracto sale en missing", () => {
+  const items = {
+    NVDA: { symbol: "NVDA", qty: 12, isin: "US67066G1040", kind: "holding" },
+    MSFT: { symbol: "MSFT", qty: 1.5, isin: "US5949181045", kind: "holding" },
+    ORCL: { symbol: "ORCL", qty: 1, isin: null, kind: "watch" },
+  };
+  const { missing } = matchPositions(items, [{ ticker: "NVDA", isin: "US67066G1040", qty: 12, avg: 200, avgCurrency: "USD", costEur: 2000 }], ["US67066G1040"]);
+  assert.deepEqual(missing.map((m) => m.symbol), ["MSFT"], "ORCL no cuenta por ser watchlist, no holding");
+});
+
+test("matchPositions: lo que no se empareja (ticker nuevo) lleva también qty/avg/costEur, no solo isin — para precargar el formulario de alta", () => {
+  const { unmatched } = matchPositions({}, [{ ticker: "ORCL", isin: "US68389X1054", qty: 1, avg: 130.39, avgCurrency: "USD", costEur: 113 }]);
+  assert.deepEqual(unmatched[0], { isin: "US68389X1054", ticker: "ORCL", qty: 1, avg: 130.39, avgCurrency: "USD", costEur: 113 });
 });
 
 test("matchPositions: ISIN repetido en varias divisas (mismo valor, dos lotes) suma cantidad y coste real, pero no toca el precio medio", () => {

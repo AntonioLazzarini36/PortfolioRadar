@@ -176,64 +176,12 @@ async function runCycle(env, { forceQuotes = false, forceTargets = false } = {})
   return s;
 }
 
-// ───────── Importar extracto "Confirmation of holdings" de Trading212 (PDF) ─────────
-// El PDF se parsea en el navegador (pdf.js) — aquí solo se recibe ya una lista
-// de filas {isin, name, qty, currency}. Este documento de Trading212 NO trae el
-// precio medio de compra, solo cantidad y el precio de mercado del día del
-// extracto (confirmado mirando el PDF real, 2026-10-21) — así que el import
-// solo toca `qty` (y rellena `isin` la primera vez), nunca `avg`/`costEur`;
-// decisión explícita del usuario, no una limitación a ocultar.
-// Quita puntuación y sufijos corporativos habituales antes de comparar — el
-// nombre de Trading212 ("Microsoft Corp", "ASML Holding NV") casi nunca
-// coincide carácter a carácter con el que el usuario ya tenía guardado
-// ("Microsoft Corporation", "ASML Holding N.V."), así que sin esto casi
-// ningún emparejamiento por nombre funcionaba nunca (reportado por el usuario
-// 2026-10-21: "solo me ha leído 5 de 20" — el problema no era la lectura, era
-// que el nombre no cuadraba exacto).
-const COMPANY_SUFFIXES = /\b(corporation|corp|incorporated|inc|company|co|limited|ltd|plc|group|holdings?|technologies|tech|n\s*v|s\s*a|a\s*g|s\s*e)\b/g;
-const normalizeName = (s) => String(s || "")
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, " ")
-  .replace(COMPANY_SUFFIXES, " ")
-  .replace(/\s+/g, " ")
-  .trim();
-
-// Una misma acción puede aparecer repetida en el extracto con distinta divisa
-// (p. ej. Amazon comprado una vez en USD y otra en EUR — mismo ISIN, mismo
-// valor, Trading212 simplemente separa el lote por divisa de ejecución). Para
-// el seguimiento de cartera es una sola posición: se suman las cantidades.
-function mergeHoldingsByIsin(holdings) {
-  const byIsin = new Map();
-  for (const h of holdings) {
-    if (!h.isin) continue;
-    const prev = byIsin.get(h.isin);
-    if (prev) prev.qty += h.qty;
-    else byIsin.set(h.isin, { ...h });
-  }
-  return [...byIsin.values()];
-}
-
-// Empareja cada fila del extracto con un ítem ya existente en la cartera: por
-// ISIN si ya lo tenemos guardado (de un import anterior), si no por nombre
-// normalizado (y lo deja guardado para la próxima vez). Lo que no encuentra
-// pareja se devuelve en `unmatched` para que el usuario lo añada a mano — no
-// se crean tickers nuevos solos, sería adivinar el símbolo sin confirmar.
-function matchHoldings(items, holdings) {
-  const merged = mergeHoldingsByIsin(holdings);
-  const matched = [], unmatched = [];
-  for (const h of merged) {
-    let item = Object.values(items).find((it) => it.isin && it.isin === h.isin);
-    if (!item) {
-      const hn = normalizeName(h.name);
-      item = Object.values(items).find((it) => !it.isin && it.name && normalizeName(it.name) === hn);
-    }
-    if (item) matched.push({ symbol: item.symbol, isin: h.isin, name: h.name, oldQty: item.qty, newQty: h.qty });
-    else unmatched.push({ isin: h.isin, name: h.name, qty: h.qty, currency: h.currency || null });
-  }
-  return { matched, unmatched };
-}
-
 // ───────── Importar precio medio + coste real desde el "Activity statement" de Trading212 (PDF) ─────────
+// El "Confirmation of holdings" (solo cantidad, emparejado por nombre) se
+// quitó 2026-10-21 — el Activity statement trae todo lo que de verdad hace
+// falta (cantidad, precio medio, coste real) y empareja por ticker, mucho más
+// fiable que por nombre normalizado. No reintroducir ese importador sin
+// revisar por qué se quitó.
 // A diferencia del "Confirmation of holdings", este extracto SÍ trae
 // AVERAGE PRICE por posición (y RETURN/VALUE en la divisa de la cuenta, de
 // donde se saca costEur = valueEur - plEur) — ver CLAUDE.md. El parseo/OCR se
@@ -242,7 +190,18 @@ function matchHoldings(items, holdings) {
 // confirmar con seguridad viene como null y simplemente no se toca).
 // El ticker de Trading212 se lee limpio y es mucho más fiable que el nombre,
 // así que aquí se empareja por símbolo exacto además de por ISIN.
-function matchPositions(items, positions) {
+// Compara con un pequeño margen — los números vienen de OCR/floats y "sin
+// cambios de verdad" no debe disparar un falso positivo por el último
+// decimal.
+const differs = (a, b) => (a == null) !== (b == null) || (a != null && Math.abs(a - b) > 0.005);
+
+// `seenIsins`: todos los ISIN que aparecieron en el documento, tanto en
+// `positions` (lectura confiada) como en filas que el navegador marcó
+// `uncertain` (no se pudieron leer con seguridad, pero sí se vio un ISIN) —
+// se usa para avisar de posiciones que SÍ tienes en la cartera y que ya no
+// aparecen en el extracto (vendidas), sin falsos positivos por una fila que
+// solo falló el OCR.
+function matchPositions(items, positions, seenIsins) {
   const byIsin = new Map();
   for (const p of positions) {
     if (!p.isin) continue;
@@ -253,14 +212,14 @@ function matchPositions(items, positions) {
   for (const [isin, rows] of byIsin) {
     let item = Object.values(items).find((it) => it.isin && it.isin === isin);
     if (!item) item = Object.values(items).find((it) => !it.isin && rows.some((r) => r.ticker && it.symbol === r.ticker.toUpperCase()));
-    if (!item) { for (const r of rows) unmatched.push({ isin, ticker: r.ticker, qty: r.qty, avg: r.avg, avgCurrency: r.avgCurrency }); continue; }
+    if (!item) { for (const r of rows) unmatched.push({ isin, ticker: r.ticker, qty: r.qty, avg: r.avg, avgCurrency: r.avgCurrency, costEur: r.costEur ?? null }); continue; }
     // Mismo ISIN en más de una fila = el mismo valor comprado en más de una
-    // divisa (p. ej. Amazon en USD y en EUR — ver mergeHoldingsByIsin). La
-    // cantidad se puede sumar siempre (es solo un número de acciones), pero el
-    // precio medio NO sin convertir ambas divisas a una común — y no hay
-    // forma fiable de saber qué tasa de cambio usar para cada lote con los
-    // datos de este documento, así que mejor no adivinar: se actualiza la
-    // cantidad igualmente, pero el precio medio/coste real se deja tal cual.
+    // divisa (p. ej. Amazon en USD y en EUR). La cantidad se puede sumar
+    // siempre (es solo un número de acciones), pero el precio medio NO sin
+    // convertir ambas divisas a una común — y no hay forma fiable de saber
+    // qué tasa de cambio usar para cada lote con los datos de este
+    // documento, así que mejor no adivinar: se actualiza la cantidad
+    // igualmente, pero el precio medio/coste real se deja tal cual.
     const totalQty = rows.reduce((s, r) => s + (r.qty || 0), 0);
     // costEur sí es seguro sumar entre lotes aunque sean de divisas distintas
     // (ya está expresado en euros, la divisa de la cuenta, en cada fila) —
@@ -271,15 +230,23 @@ function matchPositions(items, positions) {
     const mixedCurrency = rows.length > 1;
     const row = rows[0];
     const avgOk = !mixedCurrency && row.avg != null && (!item.currency || item.currency === row.avgCurrency);
+    const newAvg = avgOk ? row.avg : null;
+    const newCostEur = totalCostEur;
+    const changed = differs(item.qty, totalQty) || (newAvg != null && differs(item.avg, newAvg)) || (newCostEur != null && differs(item.costEur, newCostEur));
     matched.push({
       symbol: item.symbol, isin, ticker: row.ticker,
       oldQty: item.qty, newQty: totalQty,
-      oldAvg: item.avg, newAvg: avgOk ? row.avg : null,
-      oldCostEur: item.costEur, newCostEur: totalCostEur,
+      oldAvg: item.avg, newAvg,
+      oldCostEur: item.costEur, newCostEur,
       skippedAvg: mixedCurrency ? "varias divisas en el mismo ISIN" : (row.avg != null && !avgOk ? "divisa distinta a la ya guardada" : null),
+      changed,
     });
   }
-  return { matched, unmatched };
+  const seen = new Set(seenIsins || []);
+  const missing = Object.values(items)
+    .filter((it) => it.kind === "holding" && it.isin && !seen.has(it.isin))
+    .map((it) => ({ symbol: it.symbol, name: it.name || null, qty: it.qty, isin: it.isin }));
+  return { matched, unmatched, missing };
 }
 
 // ───────────────────────── Rutas /api/* ─────────────────────────
@@ -343,30 +310,17 @@ async function handleApi(req, env, url) {
     return json({ added, state: publicState(s) });
   }
 
-  if (path === "/import-holdings" && req.method === "POST") {
+  if (path === "/import-positions" && req.method === "POST") {
     const s = await loadState(env);
-    const holdings = Array.isArray(body?.holdings) ? body.holdings : [];
-    const { matched, unmatched } = matchHoldings(s.items, holdings);
+    const positions = Array.isArray(body?.positions) ? body.positions : [];
+    const seenIsins = Array.isArray(body?.seenIsins) ? body.seenIsins : [];
+    const { matched, unmatched, missing } = matchPositions(s.items, positions, seenIsins);
     if (body?.apply) {
-      for (const h of matched) {
+      for (const p of matched) {
         // Si el extracto dice que la tienes, es una posición real — se marca
         // "holding" aquí mismo (antes no se tocaba `kind` y un ítem que solo
         // estaba en watchlist se quedaba sin aparecer en la pestaña "Tengo"
         // ni en el total de cartera pese a tener ya cantidad).
-        const it = cleanItem({ symbol: h.symbol, qty: h.newQty, isin: h.isin, kind: "holding" }, s.items[h.symbol]);
-        s.items[h.symbol] = it;
-      }
-      await saveState(env, s);
-    }
-    return json({ matched, unmatched, applied: !!body?.apply });
-  }
-
-  if (path === "/import-positions" && req.method === "POST") {
-    const s = await loadState(env);
-    const positions = Array.isArray(body?.positions) ? body.positions : [];
-    const { matched, unmatched } = matchPositions(s.items, positions);
-    if (body?.apply) {
-      for (const p of matched) {
         const update = { symbol: p.symbol, qty: p.newQty, isin: p.isin, kind: "holding" };
         if (p.newAvg != null) update.avg = p.newAvg;
         if (p.newCostEur != null) update.costEur = p.newCostEur;
@@ -375,7 +329,7 @@ async function handleApi(req, env, url) {
       }
       await saveState(env, s);
     }
-    return json({ matched, unmatched, applied: !!body?.apply });
+    return json({ matched, unmatched, missing, applied: !!body?.apply });
   }
 
   const m = path.match(/^\/items\/([^/]+)$/);
@@ -451,4 +405,4 @@ async function handleApi(req, env, url) {
   return json({ error: "Ruta no encontrada" }, 404);
 }
 
-export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma, appendConsensusHistoryPoint, matchHoldings, matchPositions };
+export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma, appendConsensusHistoryPoint, matchPositions };

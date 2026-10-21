@@ -861,6 +861,18 @@ function pick(sym, name) {
   $("#fSym").value = sym; $("#fName").value = name || "";
   $("#results").innerHTML = `<div class="res" style="cursor:default;border-color:var(--accent)"><b>${esc(sym)}</b><span>${esc(name || "")}</span></div>`;
   $("#form").style.display = "";
+  // Si venimos de "Buscar y añadir" en el import del Activity Statement, no
+  // perder la cantidad/precio medio/coste ya extraídos del PDF solo porque el
+  // ticker no se pudo emparejar solo (petición del usuario 2026-10-21).
+  if (pendingPositionFill) {
+    const h = pendingPositionFill; pendingPositionFill = null;
+    const posEmpty = $("#posEmpty"), holdFields = $("#holdFields");
+    if (posEmpty) posEmpty.style.display = "none";
+    if (holdFields) { holdFields.style.display = ""; holdFields.closest("details.sec")?.setAttribute("open", ""); }
+    if (h.qty != null) $("#fQty").value = h.qty;
+    if (h.avg != null) $("#fAvg").value = h.avg;
+    if (h.costEur != null) $("#fCostEur").value = h.costEur;
+  }
 }
 async function saveItem() {
   // No hay interruptor "Tengo acciones": se deduce de si hay cantidad Y precio
@@ -927,7 +939,6 @@ function isValidIsin(isin) {
 const T212_SCALE = 6;       // escala de renderizado del PDF a imagen — nítido para OCR
 const T212_PAD_X = 0.5, T212_PAD_Y = 2; // margen del recorte (unidades PDF); con menos
 // margen vertical se cortaba el travesaño de los "4" y OCR los leía como "1".
-const CURRENCIES = new Set(["USD", "EUR", "GBX", "GBP"]);
 // Recorta UNA secuencia contigua de glifos rotos (misma línea, sin ningún
 // carácter real por medio) de la página ya renderizada y la lee con OCR.
 async function ocrRun(worker, canvas, viewport, items, psm, whitelist) {
@@ -961,139 +972,16 @@ async function assembleToken(parts, canvas, viewport, worker, whitelist, psm) {
 }
 const ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", DIGITS = "0123456789";
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-// Extrae {name, isin, qty, currency} de cada fila válida del extracto. Dos
-// workers de tesseract.js (motor LSTM por defecto y el "legacy", oem 0) se
-// usan como segundas/terceras opiniones: cada uno falla distinto con esta
-// fuente concreta (comprobado a mano), así que cuando uno falla el otro suele
-// acertar. El ISIN se valida con su dígito de control — si ningún intento da
-// uno válido, o si los dos motores no se ponen de acuerdo en la cantidad tras
-// un tercer intento de desempate, esa fila se devuelve en `uncertain` en vez
-// de arriesgarse a aplicar un ISIN o una cantidad que podría estar mal.
-async function extractTrading212Holdings(file, onProgress) {
-  const [pdfjsLib, Tesseract] = await Promise.all([loadPdfJs(), loadTesseract()]);
-  const buf = await file.arrayBuffer();
-  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-  const w1 = await Tesseract.createWorker("eng", 1);
-  const w0 = await Tesseract.createWorker("eng", 0);
-  const holdings = [], uncertain = [];
-  try {
-    for (let p = 1; p <= doc.numPages; p++) {
-      onProgress?.(`Leyendo página ${p} de ${doc.numPages}…`);
-      const page = await doc.getPage(p);
-      const viewport = page.getViewport({ scale: T212_SCALE });
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width; canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      const content = await page.getTextContent();
-      const rows = new Map();
-      for (const item of content.items) {
-        const key = Math.round(item.transform[5] / 2) * 2;
-        if (!rows.has(key)) rows.set(key, []);
-        rows.get(key).push(item);
-      }
-      for (const y of [...rows.keys()].sort((a, b) => b - a)) {
-        const items = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
-        const tokens = []; let cur = [];
-        for (const it of items) { if (it.str === " ") { if (cur.length) tokens.push(cur); cur = []; } else cur.push(it); }
-        if (cur.length) tokens.push(cur);
-        const curIdx = tokens.findIndex((t) => t.length === 1 && CURRENCIES.has(t[0].str));
-        if (curIdx < 2) continue;
-        const isinTok = tokens[curIdx - 2], qtyTok = tokens[curIdx - 1], nameToks = tokens.slice(0, curIdx - 2);
-        if (!nameToks.length) continue;
-        const isinParts = splitRuns(isinTok), qtyParts = splitRuns(qtyTok);
-        // El nombre también puede traer algún glifo roto (no solo los dígitos
-        // — p. ej. la "a" de "Oracle" en este mismo extracto), así que se rellena
-        // igual con OCR en vez de dejar un "?" — el nombre solo se usa como
-        // apoyo para emparejar con un ítem ya existente la primera vez (antes de
-        // tener el ISIN guardado), así que un fallo aquí como mucho hace que esa
-        // fila cueste un "Buscar y añadir" de más, nunca escribe un dato mal.
-        const name = (await Promise.all(nameToks.map((t) => assembleToken(splitRuns(t), canvas, viewport, w1, LETTERS, "8")))).join(" ");
-        const currency = tokens[curIdx][0].str;
-
-        let isin = await assembleToken(isinParts, canvas, viewport, w1, ALNUM, "8");
-        let isinOk = isValidIsin(isin);
-        if (!isinOk) { isin = await assembleToken(isinParts, canvas, viewport, w0, ALNUM, "8"); isinOk = isValidIsin(isin); }
-        if (!isinOk) { isin = await assembleToken(isinParts, canvas, viewport, w1, ALNUM, "7"); isinOk = isValidIsin(isin); }
-
-        const qtyA = await assembleToken(qtyParts, canvas, viewport, w1, DIGITS, "8");
-        const qtyB = await assembleToken(qtyParts, canvas, viewport, w0, DIGITS, "8");
-        let qtyStr, qtyOk;
-        if (qtyA === qtyB) { qtyStr = qtyA; qtyOk = true; }
-        else {
-          const qtyC = await assembleToken(qtyParts, canvas, viewport, w0, DIGITS, "7");
-          if (qtyC === qtyA) { qtyStr = qtyA; qtyOk = true; }
-          else if (qtyC === qtyB) { qtyStr = qtyB; qtyOk = true; }
-          else { qtyStr = qtyA; qtyOk = false; }
-        }
-
-        if (!isinOk || !qtyOk) uncertain.push({ name, isin, qty: qtyStr, currency });
-        else holdings.push({ name, isin, qty: parseFloat(qtyStr), currency });
-      }
-    }
-  } finally { await w1.terminate(); await w0.terminate(); }
-  return { holdings, uncertain };
-}
-function renderHoldingsPreview(matched, unmatched, uncertain) {
-  const rows = matched.map((h) => `<div class="res" style="cursor:default">
-      <b>${esc(h.symbol)}</b><span>${esc(h.name)}</span>
-      <small>${nf(h.oldQty, 4)} → <b class="${h.newQty !== h.oldQty ? "g" : ""}">${nf(h.newQty, 4)}</b></small>
-    </div>`).join("");
-  const un = unmatched.map((h) => `<div class="res" style="cursor:default">
-      <b>${esc(h.name)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
-      <button class="btn sec" style="padding:4px 10px;font-size:12px" data-addisin="${esc(h.isin)}">Buscar y añadir</button>
-    </div>`).join("");
-  const unc = (uncertain || []).map((h) => `<div class="res" style="cursor:default">
-      <b>${esc(h.name)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
-    </div>`).join("");
-  return `${matched.length ? `<p class="hint">Se actualizará la cantidad de estas ${matched.length}:</p>${rows}` : `<p class="hint">Ninguna coincide con algo que ya tengas en la cartera.</p>`}
-    ${unmatched.length ? `<p class="hint" style="margin-top:10px">${unmatched.length} del extracto no están en tu cartera todavía:</p>${un}` : ""}
-    ${unc ? `<p class="hint r" style="margin-top:10px">No se pudieron leer con seguridad (revísalas a mano en el PDF):</p>${unc}` : ""}`;
-}
-function wireHoldingsImport(root) {
-  const input = root.querySelector("#sHoldPdf");
-  const out = root.querySelector("#sHoldOut");
-  if (!input) return;
-  let pendingHoldings = null;
-  input.onchange = async () => {
-    const file = input.files[0];
-    if (!file) return;
-    out.innerHTML = `<p class="hint">Leyendo el PDF (puede tardar unos segundos)…</p>`;
-    try {
-      const { holdings, uncertain } = await extractTrading212Holdings(file, (msg) => { out.innerHTML = `<p class="hint">${esc(msg)}</p>`; });
-      pendingHoldings = holdings;
-      if (!pendingHoldings.length && !uncertain.length) { out.innerHTML = `<p class="hint r">No se reconoció ninguna fila de posición en este PDF.</p>`; return; }
-      const { matched, unmatched } = pendingHoldings.length ? await api("/import-holdings", { method: "POST", body: JSON.stringify({ holdings: pendingHoldings }) }) : { matched: [], unmatched: [] };
-      out.innerHTML = renderHoldingsPreview(matched, unmatched, uncertain) + (matched.length ? `<button class="btn" id="sHoldApply" style="margin-top:10px">Confirmar e importar</button>` : "");
-      out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
-        const h = unmatched.find((u) => u.isin === b.dataset.addisin);
-        closeSheets(); openItem(null);
-        setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
-      });
-      const applyBtn = out.querySelector("#sHoldApply");
-      if (applyBtn) applyBtn.onclick = async () => {
-        applyBtn.textContent = "Importando…";
-        try {
-          const r = await api("/import-holdings", { method: "POST", body: JSON.stringify({ holdings: pendingHoldings, apply: true }) });
-          await load();
-          out.innerHTML = `<p class="hint g">${r.matched.length} posiciones actualizadas.</p>`;
-          toast("Cantidades actualizadas desde el extracto");
-        } catch (e) { toast(e.message); applyBtn.textContent = "Confirmar e importar"; }
-      };
-    } catch (e) { out.innerHTML = `<p class="hint r">${esc(e.message)}</p>`; }
-  };
-}
-
-// ───────── importar precio medio + coste real desde el "Activity statement" (PDF) ─────────
-// A diferencia del "Confirmation of holdings" (solo cantidad), este extracto
-// de Trading212 SÍ trae precio medio por posición y el retorno/valor en la
-// divisa de la cuenta (de donde sale costEur) — comprobado a mano contra un
-// extracto real 2026-10-21, página "Invest account - open positions summary".
-// Misma fuente rota que el otro PDF, pero la fila tiene 10 columnas fijas en
-// vez de un ancla de divisa suelta: TICKER, ISIN, QUANTITY, AVERAGE PRICE,
-// PRICE, RETURN(instr), VALUE(instr), FX RATE, RETURN(cuenta), VALUE(cuenta)
-// — solo se usan las que no son PRICE/RETURN(instr)/VALUE(instr)/FX RATE.
-// Reutiliza loadPdfJs/loadTesseract/isValidIsin/splitRuns/assembleToken ya
-// definidos para el otro importador.
+// ───────── importar cantidad, precio medio y coste real desde el "Activity statement" (PDF) ─────────
+// Único importador de Trading212 (el "Confirmation of holdings" se quitó
+// 2026-10-21 — solo traía cantidad, y emparejaba por nombre normalizado en
+// vez de ticker, mucho menos fiable). Este extracto SÍ trae precio medio por
+// posición y el retorno/valor en la divisa de la cuenta (de donde sale
+// costEur) — comprobado a mano contra un extracto real 2026-10-21, página
+// "Invest account - open positions summary". La fila tiene 10 columnas
+// fijas: TICKER, ISIN, QUANTITY, AVERAGE PRICE, PRICE, RETURN(instr),
+// VALUE(instr), FX RATE, RETURN(cuenta), VALUE(cuenta) — solo se usan las que
+// no son PRICE/RETURN(instr)/VALUE(instr)/FX RATE.
 // Como assembleToken, pero recortando UN carácter roto a la vez en vez de un
 // tramo entero de golpe — una estrategia de recorte distinta, no solo un
 // motor distinto. Hace falta porque un tramo de varios dígitos recortado de
@@ -1222,29 +1110,79 @@ async function extractTrading212Positions(file, onProgress) {
   } finally { await w1.terminate(); await w0.terminate(); }
   return { positions, uncertain };
 }
-function renderPositionsPreview(matched, unmatched, uncertain) {
-  const rows = matched.map((h) => `<div class="res" style="cursor:default">
+// Fila a fila: lo que de verdad cambió se destaca con los datos antes→después
+// (filtrado en matchPositions vía `changed` — si qty/avg/coste son iguales a
+// lo que ya había, ni se muestra, petición del usuario 2026-10-21: "si todo
+// lo que lee es igual... que no aparezca nada"). Lo nuevo (`unmatched`) sale
+// en verde porque es una posición que no tenías. Lo que tenías pero ya no
+// aparece en el extracto (`missing`, posible venta) sale en rojo con un
+// botón de eliminar de doble pulsación, igual que el resto de la app.
+function renderPositionsPreview(matched, unmatched, uncertain, missing) {
+  const changed = matched.filter((h) => h.changed);
+  const unchangedCount = matched.length - changed.length;
+  const rows = changed.map((h) => `<div class="res" style="cursor:default">
       <b>${esc(h.symbol)}</b><span>${h.skippedAvg ? esc(h.skippedAvg) : ""}</span>
       <small>qty ${nf(h.oldQty, 4)} → <b class="${h.newQty !== h.oldQty ? "g" : ""}">${nf(h.newQty, 4)}</b>
         ${h.newAvg != null ? ` · medio ${nf(h.oldAvg)} → <b class="g">${nf(h.newAvg)}</b>` : ""}
         ${h.newCostEur != null ? ` · coste ${h.oldCostEur != null ? nf(h.oldCostEur, 0) + " → " : ""}<b class="g">${nf(h.newCostEur, 0)} €</b>` : ""}</small>
     </div>`).join("");
-  const un = unmatched.map((h) => `<div class="res" style="cursor:default">
+  const un = unmatched.map((h) => `<div class="res" style="cursor:default;background:var(--gl);border-color:var(--g)" data-row-isin="${esc(h.isin)}">
       <b>${esc(h.ticker)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
       <button class="btn sec" style="padding:4px 10px;font-size:12px" data-addisin="${esc(h.isin)}">Buscar y añadir</button>
+      <button class="btn danger" style="padding:4px 8px;font-size:12px" data-dismiss="${esc(h.isin)}">✕</button>
     </div>`).join("");
   const unc = (uncertain || []).map((h) => `<div class="res" style="cursor:default">
       <b>${esc(h.name)}</b><span>${esc(h.isin || "")} · ${h.qty != null ? nf(h.qty, 4) : "—"}</span>
     </div>`).join("");
-  return `${matched.length ? `<p class="hint">Se actualizarán estas ${matched.length}:</p>${rows}` : `<p class="hint">Ninguna coincide con algo que ya tengas en la cartera.</p>`}
+  const miss = (missing || []).map((h) => `<div class="res" style="cursor:default;background:var(--rl);border-color:var(--r)">
+      <b>${esc(h.symbol)}</b><span>${esc(h.name || "")} · tenías ${nf(h.qty, 4)}</span>
+      <button class="btn danger" style="padding:4px 10px;font-size:12px" data-delmissing="${esc(h.symbol)}">Eliminar</button>
+    </div>`).join("");
+  return `${changed.length ? `<p class="hint">Se actualizarán estas ${changed.length}:</p>${rows}` : (matched.length ? `<p class="hint g">Nada cambió — las ${matched.length} que ya tenías siguen igual.</p>` : `<p class="hint">Ninguna coincide con algo que ya tengas en la cartera.</p>`)}
+    ${unchangedCount && changed.length ? `<p class="hint" style="margin-top:4px">${unchangedCount} más sin cambios, no se muestran.</p>` : ""}
     ${unmatched.length ? `<p class="hint" style="margin-top:10px">${unmatched.length} del extracto no están en tu cartera todavía:</p>${un}` : ""}
-    ${unc ? `<p class="hint r" style="margin-top:10px">No se pudieron leer con seguridad (revísalas a mano en el PDF):</p>${unc}` : ""}`;
+    ${unc ? `<p class="hint r" style="margin-top:10px">No se pudieron leer con seguridad (revísalas a mano en el PDF):</p>${unc}` : ""}
+    ${miss.length ? `<p class="hint r" style="margin-top:10px">En tu cartera pero ya no aparecen en el extracto (¿las vendiste?):</p>${miss}` : ""}`;
 }
+// Datos de una fila `unmatched` pendientes de aplicar al ticker que el
+// usuario elija en la búsqueda — pick() los consume y rellena el formulario
+// en cuanto se selecciona un resultado (ver openItem()/pick()), así "Buscar y
+// añadir" no pierde la cantidad/precio medio/coste ya extraídos del PDF.
+let pendingPositionFill = null;
 function wirePositionsImport(root) {
   const input = root.querySelector("#sPosPdf");
   const out = root.querySelector("#sPosOut");
   if (!input) return;
-  let pendingPositions = null;
+  let pendingPositions = null, pendingUncertain = [], seenIsins = [];
+  async function refreshPreview() {
+    const { matched, unmatched, missing } = pendingPositions.length ? await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions, seenIsins }) }) : { matched: [], unmatched: [], missing: [] };
+    out.innerHTML = renderPositionsPreview(matched, unmatched, pendingUncertain, missing) + (matched.filter((h) => h.changed).length ? `<button class="btn" id="sPosApply" style="margin-top:10px">Confirmar e importar</button>` : "");
+    out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
+      const h = unmatched.find((u) => u.isin === b.dataset.addisin);
+      pendingPositionFill = h;
+      closeSheets(); openItem(null);
+      setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
+    });
+    out.querySelectorAll("[data-dismiss]").forEach((b) => b.onclick = () => {
+      b.closest("[data-row-isin]")?.remove();
+    });
+    out.querySelectorAll("[data-delmissing]").forEach((b) => b.onclick = async () => {
+      const sym = b.dataset.delmissing;
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "¿Seguro? Pulsa otra vez"; setTimeout(() => { b.dataset.armed = "0"; b.textContent = "Eliminar"; }, 3000); return; }
+      S = await api("/items/" + encodeURIComponent(sym), { method: "DELETE" }); render(); toast(sym + " eliminada");
+      b.closest(".res")?.remove();
+    });
+    const applyBtn = out.querySelector("#sPosApply");
+    if (applyBtn) applyBtn.onclick = async () => {
+      applyBtn.textContent = "Importando…";
+      try {
+        const r = await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions, apply: true }) });
+        await load();
+        out.innerHTML = `<p class="hint g">${r.matched.filter((h) => h.changed).length} posiciones actualizadas.</p>`;
+        toast("Cantidad, precio medio y coste actualizados desde el extracto");
+      } catch (e) { toast(e.message); applyBtn.textContent = "Confirmar e importar"; }
+    };
+  }
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
@@ -1252,24 +1190,10 @@ function wirePositionsImport(root) {
     try {
       const { positions, uncertain } = await extractTrading212Positions(file, (msg) => { out.innerHTML = `<p class="hint">${esc(msg)}</p>`; });
       pendingPositions = positions;
+      pendingUncertain = uncertain;
+      seenIsins = [...positions.map((p) => p.isin), ...uncertain.map((u) => u.isin).filter(Boolean)];
       if (!pendingPositions.length && !uncertain.length) { out.innerHTML = `<p class="hint r">No se encontró la sección "Open positions" en este PDF — ¿es el Activity Statement?</p>`; return; }
-      const { matched, unmatched } = pendingPositions.length ? await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions }) }) : { matched: [], unmatched: [] };
-      out.innerHTML = renderPositionsPreview(matched, unmatched, uncertain) + (matched.length ? `<button class="btn" id="sPosApply" style="margin-top:10px">Confirmar e importar</button>` : "");
-      out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
-        const h = unmatched.find((u) => u.isin === b.dataset.addisin);
-        closeSheets(); openItem(null);
-        setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
-      });
-      const applyBtn = out.querySelector("#sPosApply");
-      if (applyBtn) applyBtn.onclick = async () => {
-        applyBtn.textContent = "Importando…";
-        try {
-          const r = await api("/import-positions", { method: "POST", body: JSON.stringify({ positions: pendingPositions, apply: true }) });
-          await load();
-          out.innerHTML = `<p class="hint g">${r.matched.length} posiciones actualizadas.</p>`;
-          toast("Cantidad, precio medio y coste actualizados desde el extracto");
-        } catch (e) { toast(e.message); applyBtn.textContent = "Confirmar e importar"; }
-      };
+      await refreshPreview();
     } catch (e) { out.innerHTML = `<p class="hint r">${esc(e.message)}</p>`; }
   };
 }
@@ -1296,12 +1220,8 @@ function openSettings(needToken) {
     <label class="f" style="margin-top:22px">Importar varias de golpe</label>
     <textarea class="i" id="sImp" rows="5" placeholder="Una por línea: TICKER, cantidad, precio medio, objetivo venta, precio compra&#10;NVDA, 16, 204.55, 240&#10;MSFT, 1.5, 386.59&#10;ADBE (solo ticker = watchlist)"></textarea>
     <button class="btn sec" id="sImpBtn">Importar</button>
-    <label class="f" style="margin-top:22px">Actualizar cantidades desde extracto de Trading212 (PDF)</label>
-    <p class="hint">Sube el PDF "Confirmation of holdings". Solo actualiza la cantidad de lo que ya tienes en la cartera (y recuerda el ISIN para la próxima vez) — ese PDF no trae el precio medio, así que eso lo sigues poniendo tú a mano.</p>
-    <input class="i" type="file" accept="application/pdf" id="sHoldPdf">
-    <div id="sHoldOut"></div>
     <label class="f" style="margin-top:22px">Actualizar cantidad, precio medio y coste desde el Activity Statement (PDF)</label>
-    <p class="hint">Sube el "Activity statement" (no el "Confirmation of holdings") — ese sí trae tu precio medio real por posición, y de ahí se calcula también el coste real en euros. En Trading212: Historial → exportar → Activity statement.</p>
+    <p class="hint">Sube el "Activity statement" de Trading212 — trae cantidad, precio medio real y de ahí se calcula también el coste real en euros. En Trading212: Historial → exportar → Activity statement.</p>
     <input class="i" type="file" accept="application/pdf" id="sPosPdf">
     <div id="sPosOut"></div>
     <button class="btn sec" id="sAllT">Actualizar todos los consensos</button>
@@ -1318,7 +1238,6 @@ function openSettings(needToken) {
     catch (e) { toast(e.message); $("#sImpBtn").textContent = "Importar"; } };
   $("#sAllT").onclick = async () => { $("#sAllT").textContent = "Actualizando…"; try { S = await api("/targets/refresh", { method: "POST", body: "{}" }); render(); toast("Consensos actualizados"); } catch (e) { toast(e.message); } $("#sAllT").textContent = "Actualizar todos los consensos"; };
   $("#sDiag").onclick = async () => { $("#diagOut").textContent = "Probando…"; try { const d = await api("/diag?symbol=" + (Object.keys(S.items)[0] || "AAPL")); $("#diagOut").textContent = JSON.stringify(d, null, 1); } catch (e) { $("#diagOut").textContent = e.message; } };
-  wireHoldingsImport($("#sheetSettings"));
   wirePositionsImport($("#sheetSettings"));
 }
 function closeSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
