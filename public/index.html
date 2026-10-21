@@ -387,6 +387,38 @@ function rangeBar(m) {
   return h;
 }
 
+// Evolución del consenso en el tiempo (petición del usuario 2026-10-21). Se
+// construye hacia adelante, un punto por día desde que se desplegó esta
+// versión (ver appendConsensusHistoryPoint en src/api.js) — Yahoo/FMP gratis
+// no dan histórico retroactivo del consenso, así que no hay nada que mostrar
+// hasta que se acumulen un par de puntos. Es un SVG dibujado a mano (sin
+// librería de gráficos), mismos colores que el resto de la app.
+function consensusHistoryChart(t, c) {
+  const hist = t.history || [];
+  if (hist.length < 2) return `<p class="hint">Aún no hay suficiente histórico — se guarda un punto por día a partir de ahora, así que esto se irá llenando solo.</p>`;
+  const W = 300, H = 120, pad = 8;
+  const all = hist.flatMap(h => [h.mean, h.high, h.low]).filter(v => v != null);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const padV = (hi - lo) * 0.1 || hi * 0.05 || 1; lo -= padV; hi += padV;
+  const x = (i) => pad + (i / (hist.length - 1)) * (W - pad * 2);
+  const y = (v) => H - pad - ((v - lo) / (hi - lo)) * (H - pad * 2);
+  const linePts = (key) => hist.map((h, i) => h[key] != null ? `${x(i).toFixed(1)},${y(h[key]).toFixed(1)}` : null).filter(Boolean).join(" ");
+  const top = hist.map((h, i) => h.high != null ? [x(i), y(h.high)] : null).filter(Boolean);
+  const bot = hist.map((h, i) => h.low != null ? [x(i), y(h.low)] : null).filter(Boolean).reverse();
+  const bandPath = (top.length && bot.length) ? `M${top.map(p => p.join(",")).join(" L")} L${bot.map(p => p.join(",")).join(" L")} Z` : "";
+  const fmtDate = (d) => new Date(d).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+  const meanPts = linePts("mean");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:120px;display:block">
+      ${bandPath ? `<path d="${esc(bandPath)}" fill="var(--band)" opacity="0.6"></path>` : ""}
+      ${meanPts ? `<polyline points="${esc(meanPts)}" fill="none" stroke="var(--accent)" stroke-width="1.8"></polyline>` : ""}
+    </svg>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:2px">
+      <span>${esc(fmtDate(hist[0].d))} · ${nf(hist[0].mean)} ${c}</span>
+      <span>${esc(fmtDate(hist[hist.length - 1].d))} · ${nf(hist[hist.length - 1].mean)} ${c}</span>
+    </div>
+    <div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso medio</span></div>`;
+}
+
 // Cuando dos marcadores caen cerca (p. ej. el precio y mi entrada), sus
 // etiquetas de valor se pisan. Se mide de verdad lo ya renderizado (más
 // fiable que adivinar por los valores) y se desplaza hacia arriba, en pisos,
@@ -703,6 +735,7 @@ function preview(m) {
     { label: "Analistas", value: m.t.analysts ?? null, sub: m.t.rating || null, subCls: clsRating(m.t.rating) },
     { label: "Actualizado", value: m.t.updatedAt ? new Date(m.t.updatedAt).toLocaleDateString("es-ES") : null, sub: m.t.source || null },
   ])) || `<p class="hint">Sin consenso de analistas todavía.</p>`;
+  const consensoHist = section("Evolución del consenso", consensusHistoryChart(m.t, c), false);
   const fundamentales = section("Fundamentales", statGrid([
     { label: "P/E", value: m.t.pe != null ? nf(m.t.pe, 1) : null, valueCls: clsPE(m.t.pe) },
     { label: "Fwd P/E", value: m.t.forwardPe != null ? nf(m.t.forwardPe, 1) : null, valueCls: clsPE(m.t.forwardPe) },
@@ -748,6 +781,7 @@ function preview(m) {
     ${rb ? `<div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso</span><span><i class="lg p"></i>precio</span><span><i class="lg e"></i>mi entrada</span><span><i class="lg t"></i>mi objetivo</span></div>` : ""}
     ${descripcion}
     ${consenso}
+    ${consensoHist}
     ${fundamentales}
     ${resultados}
     ${objetivos}
@@ -844,6 +878,204 @@ async function saveItem() {
 }
 
 // ───────── ajustes ─────────
+// ───────── importar extracto de Trading212 (PDF) ─────────
+// Carga pdf.js (vía CDN, ESM) solo cuando hace falta — es la única dependencia
+// externa de todo el frontend, y solo para esta función, así que no tiene
+// sentido meterla en el "shell" cacheado del service worker ni cargarla
+// siempre. El extracto "Confirmation of holdings" de Trading212 NO trae el
+// precio medio de compra, solo cantidad y el precio de mercado del día del
+// extracto — decisión explícita del usuario (2026-10-21): este import solo
+// actualiza cantidades, nunca el precio medio.
+const PDFJS_VER = "6.4.299";
+let pdfjsLibPromise = null;
+function loadPdfJs() {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = import(`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.min.mjs`).then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.mjs`;
+      return lib;
+    });
+  }
+  return pdfjsLibPromise;
+}
+// El PDF de Trading212 usa una fuente cuyos glifos de dígito no tienen CMap
+// (pdf.js los extrae como "\u0000", comprobado a mano con el extracto real
+// 2026-10-21) — el texto normal (nombres, "USD"/"EUR", letras dentro del
+// ISIN) se lee perfectamente, SOLO los dígitos salen rotos. Así que en vez de
+// leer el texto tal cual, se usa la posición (sí fiable) de cada "\u0000" para
+// recortar justo ese glifo de la página ya renderizada a imagen, y ese recorte
+// se lee con OCR (tesseract.js) — mucho más preciso que OCR de la página
+// entera (probado: página entera confundía el punto decimal en cantidades
+// fraccionarias, p. ej. 2.99991533 → 299991533).
+const TESS_VER = "7.0.0";
+let tesseractLibPromise = null;
+function loadTesseract() {
+  if (!tesseractLibPromise) {
+    tesseractLibPromise = import(`https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/${TESS_VER}/tesseract.esm.min.js`).then((m) => m.default);
+  }
+  return tesseractLibPromise;
+}
+// Dígito de control del ISIN (ISO 6166 / algoritmo de Luhn sobre las letras
+// convertidas a dos dígitos, A=10...Z=35) — deja comprobar matemáticamente si
+// un ISIN leído por OCR es correcto, sin tener que confiar a ciegas.
+function isValidIsin(isin) {
+  if (!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)) return false;
+  const expanded = [...isin].map((c) => (/[0-9]/.test(c) ? c : String(c.charCodeAt(0) - 55))).join("");
+  let sum = 0, double = expanded.length % 2 === 0;
+  for (const ch of expanded) { let d = +ch * (double ? 2 : 1); if (d > 9) d -= 9; sum += d; double = !double; }
+  return sum % 10 === 0;
+}
+const T212_SCALE = 6;       // escala de renderizado del PDF a imagen — nítido para OCR
+const T212_PAD_X = 0.5, T212_PAD_Y = 2; // margen del recorte (unidades PDF); con menos
+// margen vertical se cortaba el travesaño de los "4" y OCR los leía como "1".
+const CURRENCIES = new Set(["USD", "EUR", "GBX", "GBP"]);
+// Recorta UNA secuencia contigua de glifos rotos (misma línea, sin ningún
+// carácter real por medio) de la página ya renderizada y la lee con OCR.
+async function ocrRun(worker, canvas, viewport, items, psm, whitelist) {
+  const x0 = Math.min(...items.map((r) => r.transform[4])), x1 = Math.max(...items.map((r) => r.transform[4] + r.width));
+  const y0 = Math.min(...items.map((r) => r.transform[5])), y1 = Math.max(...items.map((r) => r.transform[5] + r.height));
+  const p1 = viewport.convertToViewportPoint(x0 - T212_PAD_X, y0 - T212_PAD_Y);
+  const p2 = viewport.convertToViewportPoint(x1 + T212_PAD_X, y1 + T212_PAD_Y);
+  const rx0 = Math.min(p1[0], p2[0]), ry0 = Math.min(p1[1], p2[1]), rw = Math.abs(p2[0] - p1[0]), rh = Math.abs(p2[1] - p1[1]);
+  const crop = document.createElement("canvas");
+  crop.width = Math.max(1, Math.round(rw)); crop.height = Math.max(1, Math.round(rh));
+  crop.getContext("2d").drawImage(canvas, rx0, ry0, rw, rh, 0, 0, crop.width, crop.height);
+  await worker.setParameters({ tessedit_char_whitelist: whitelist, tessedit_pageseg_mode: psm });
+  const { data } = await worker.recognize(crop);
+  return (data.text || "").replace(/[^0-9A-Z]/g, "");
+}
+// Separa un "token" (secuencia de fragmentos del PDF sin espacio real entre
+// medio — p. ej. todo un ISIN, o toda una cantidad) en tramos: texto real tal
+// cual, o una tanda de glifos rotos a recortar y pasar por OCR juntos.
+function splitRuns(tok) {
+  const parts = []; let i = 0;
+  while (i < tok.length) {
+    if (tok[i].str === "\u0000") { let j = i; while (j < tok.length && tok[j].str === "\u0000") j++; parts.push({ run: tok.slice(i, j) }); i = j; }
+    else { parts.push({ lit: tok[i].str }); i++; }
+  }
+  return parts;
+}
+async function assembleToken(parts, canvas, viewport, worker, whitelist, psm) {
+  let out = "";
+  for (const part of parts) out += part.lit != null ? part.lit : await ocrRun(worker, canvas, viewport, part.run, psm, whitelist);
+  return out;
+}
+const ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", DIGITS = "0123456789";
+// Extrae {name, isin, qty, currency} de cada fila válida del extracto. Dos
+// workers de tesseract.js (motor LSTM por defecto y el "legacy", oem 0) se
+// usan como segundas/terceras opiniones: cada uno falla distinto con esta
+// fuente concreta (comprobado a mano), así que cuando uno falla el otro suele
+// acertar. El ISIN se valida con su dígito de control — si ningún intento da
+// uno válido, o si los dos motores no se ponen de acuerdo en la cantidad tras
+// un tercer intento de desempate, esa fila se devuelve en `uncertain` en vez
+// de arriesgarse a aplicar un ISIN o una cantidad que podría estar mal.
+async function extractTrading212Holdings(file, onProgress) {
+  const [pdfjsLib, Tesseract] = await Promise.all([loadPdfJs(), loadTesseract()]);
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const w1 = await Tesseract.createWorker("eng", 1);
+  const w0 = await Tesseract.createWorker("eng", 0);
+  const holdings = [], uncertain = [];
+  try {
+    for (let p = 1; p <= doc.numPages; p++) {
+      onProgress?.(`Leyendo página ${p} de ${doc.numPages}…`);
+      const page = await doc.getPage(p);
+      const viewport = page.getViewport({ scale: T212_SCALE });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const content = await page.getTextContent();
+      const rows = new Map();
+      for (const item of content.items) {
+        const key = Math.round(item.transform[5] / 2) * 2;
+        if (!rows.has(key)) rows.set(key, []);
+        rows.get(key).push(item);
+      }
+      for (const y of [...rows.keys()].sort((a, b) => b - a)) {
+        const items = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
+        const tokens = []; let cur = [];
+        for (const it of items) { if (it.str === " ") { if (cur.length) tokens.push(cur); cur = []; } else cur.push(it); }
+        if (cur.length) tokens.push(cur);
+        const curIdx = tokens.findIndex((t) => t.length === 1 && CURRENCIES.has(t[0].str));
+        if (curIdx < 2) continue;
+        const isinTok = tokens[curIdx - 2], qtyTok = tokens[curIdx - 1], nameToks = tokens.slice(0, curIdx - 2);
+        if (!nameToks.length) continue;
+        const isinParts = splitRuns(isinTok), qtyParts = splitRuns(qtyTok);
+        const name = nameToks.map((t) => t.map((x) => x.str).join("")).join(" ").replace(/\u0000/g, "?");
+        const currency = tokens[curIdx][0].str;
+
+        let isin = await assembleToken(isinParts, canvas, viewport, w1, ALNUM, "8");
+        let isinOk = isValidIsin(isin);
+        if (!isinOk) { isin = await assembleToken(isinParts, canvas, viewport, w0, ALNUM, "8"); isinOk = isValidIsin(isin); }
+        if (!isinOk) { isin = await assembleToken(isinParts, canvas, viewport, w1, ALNUM, "7"); isinOk = isValidIsin(isin); }
+
+        const qtyA = await assembleToken(qtyParts, canvas, viewport, w1, DIGITS, "8");
+        const qtyB = await assembleToken(qtyParts, canvas, viewport, w0, DIGITS, "8");
+        let qtyStr, qtyOk;
+        if (qtyA === qtyB) { qtyStr = qtyA; qtyOk = true; }
+        else {
+          const qtyC = await assembleToken(qtyParts, canvas, viewport, w0, DIGITS, "7");
+          if (qtyC === qtyA) { qtyStr = qtyA; qtyOk = true; }
+          else if (qtyC === qtyB) { qtyStr = qtyB; qtyOk = true; }
+          else { qtyStr = qtyA; qtyOk = false; }
+        }
+
+        if (!isinOk || !qtyOk) uncertain.push({ name, isin, qty: qtyStr, currency });
+        else holdings.push({ name, isin, qty: parseFloat(qtyStr), currency });
+      }
+    }
+  } finally { await w1.terminate(); await w0.terminate(); }
+  return { holdings, uncertain };
+}
+function renderHoldingsPreview(matched, unmatched, uncertain) {
+  const rows = matched.map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.symbol)}</b><span>${esc(h.name)}</span>
+      <small>${nf(h.oldQty, 4)} → <b class="${h.newQty !== h.oldQty ? "g" : ""}">${nf(h.newQty, 4)}</b></small>
+    </div>`).join("");
+  const un = unmatched.map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.name)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
+      <button class="btn sec" style="padding:4px 10px;font-size:12px" data-addisin="${esc(h.isin)}">Buscar y añadir</button>
+    </div>`).join("");
+  const unc = (uncertain || []).map((h) => `<div class="res" style="cursor:default">
+      <b>${esc(h.name)}</b><span>${esc(h.isin)} · ${nf(h.qty, 4)}</span>
+    </div>`).join("");
+  return `${matched.length ? `<p class="hint">Se actualizará la cantidad de estas ${matched.length}:</p>${rows}` : `<p class="hint">Ninguna coincide con algo que ya tengas en la cartera.</p>`}
+    ${unmatched.length ? `<p class="hint" style="margin-top:10px">${unmatched.length} del extracto no están en tu cartera todavía:</p>${un}` : ""}
+    ${unc ? `<p class="hint r" style="margin-top:10px">No se pudieron leer con seguridad (revísalas a mano en el PDF):</p>${unc}` : ""}`;
+}
+function wireHoldingsImport(root) {
+  const input = root.querySelector("#sHoldPdf");
+  const out = root.querySelector("#sHoldOut");
+  if (!input) return;
+  let pendingHoldings = null;
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    out.innerHTML = `<p class="hint">Leyendo el PDF (puede tardar unos segundos)…</p>`;
+    try {
+      const { holdings, uncertain } = await extractTrading212Holdings(file, (msg) => { out.innerHTML = `<p class="hint">${esc(msg)}</p>`; });
+      pendingHoldings = holdings;
+      if (!pendingHoldings.length && !uncertain.length) { out.innerHTML = `<p class="hint r">No se reconoció ninguna fila de posición en este PDF.</p>`; return; }
+      const { matched, unmatched } = pendingHoldings.length ? await api("/import-holdings", { method: "POST", body: JSON.stringify({ holdings: pendingHoldings }) }) : { matched: [], unmatched: [] };
+      out.innerHTML = renderHoldingsPreview(matched, unmatched, uncertain) + (matched.length ? `<button class="btn" id="sHoldApply" style="margin-top:10px">Confirmar e importar</button>` : "");
+      out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
+        const h = unmatched.find((u) => u.isin === b.dataset.addisin);
+        closeSheets(); openItem(null);
+        setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
+      });
+      const applyBtn = out.querySelector("#sHoldApply");
+      if (applyBtn) applyBtn.onclick = async () => {
+        applyBtn.textContent = "Importando…";
+        try {
+          const r = await api("/import-holdings", { method: "POST", body: JSON.stringify({ holdings: pendingHoldings, apply: true }) });
+          await load();
+          out.innerHTML = `<p class="hint g">${r.matched.length} posiciones actualizadas.</p>`;
+          toast("Cantidades actualizadas desde el extracto");
+        } catch (e) { toast(e.message); applyBtn.textContent = "Confirmar e importar"; }
+      };
+    } catch (e) { out.innerHTML = `<p class="hint r">${esc(e.message)}</p>`; }
+  };
+}
+
 function openSettings(needToken) {
   const st = S?.settings || {};
   $("#sheetSettings").innerHTML = `
@@ -866,6 +1098,10 @@ function openSettings(needToken) {
     <label class="f" style="margin-top:22px">Importar varias de golpe</label>
     <textarea class="i" id="sImp" rows="5" placeholder="Una por línea: TICKER, cantidad, precio medio, objetivo venta, precio compra&#10;NVDA, 16, 204.55, 240&#10;MSFT, 1.5, 386.59&#10;ADBE (solo ticker = watchlist)"></textarea>
     <button class="btn sec" id="sImpBtn">Importar</button>
+    <label class="f" style="margin-top:22px">Actualizar cantidades desde extracto de Trading212 (PDF)</label>
+    <p class="hint">Sube el PDF "Confirmation of holdings". Solo actualiza la cantidad de lo que ya tienes en la cartera (y recuerda el ISIN para la próxima vez) — ese PDF no trae el precio medio, así que eso lo sigues poniendo tú a mano.</p>
+    <input class="i" type="file" accept="application/pdf" id="sHoldPdf">
+    <div id="sHoldOut"></div>
     <button class="btn sec" id="sAllT">Actualizar todos los consensos</button>
     <button class="btn sec" id="sDiag">Diagnóstico de fuentes de datos</button>
     <pre id="diagOut" style="white-space:pre-wrap;font-size:11px;color:var(--ink2)"></pre>` : ""}`;
@@ -880,6 +1116,7 @@ function openSettings(needToken) {
     catch (e) { toast(e.message); $("#sImpBtn").textContent = "Importar"; } };
   $("#sAllT").onclick = async () => { $("#sAllT").textContent = "Actualizando…"; try { S = await api("/targets/refresh", { method: "POST", body: "{}" }); render(); toast("Consensos actualizados"); } catch (e) { toast(e.message); } $("#sAllT").textContent = "Actualizar todos los consensos"; };
   $("#sDiag").onclick = async () => { $("#diagOut").textContent = "Probando…"; try { const d = await api("/diag?symbol=" + (Object.keys(S.items)[0] || "AAPL")); $("#diagOut").textContent = JSON.stringify(d, null, 1); } catch (e) { $("#diagOut").textContent = e.message; } };
+  wireHoldingsImport($("#sheetSettings"));
 }
 function closeSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
 document.querySelectorAll(".overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeSheets(); }));

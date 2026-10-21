@@ -3,3 +3,4 @@ APP_TOKEN_NUEVO.md
 node_modules
 .wrangler
 *.log
+confirmation-of-holdings.*

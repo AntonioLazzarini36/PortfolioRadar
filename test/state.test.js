@@ -42,6 +42,13 @@ test("cleanItem: costEur (euros reales gastados) se normaliza y se conserva si n
   assert.equal(updated.costEur, 1050.30);
 });
 
+test("cleanItem: isin se guarda y se conserva si no viene en el body", () => {
+  const prev = cleanItem({ symbol: "MSFT", isin: "US5949181045" });
+  assert.equal(prev.isin, "US5949181045");
+  const updated = cleanItem({ symbol: "MSFT", qty: 2 }, prev);
+  assert.equal(updated.isin, "US5949181045");
+});
+
 test("parseImportLine acepta coma, punto y coma y tabulador como separador", () => {
   assert.deepEqual(parseImportLine("NVDA, 16, 204.55, 240"), { sym: "NVDA", qty: "16", avg: "204.55", tgt: "240", buy: undefined });
   assert.deepEqual(parseImportLine("MSFT;1.5;386.59"), { sym: "MSFT", qty: "1.5", avg: "386.59", tgt: undefined, buy: undefined });

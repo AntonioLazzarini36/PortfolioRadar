@@ -15,6 +15,15 @@ const WMA_MAX_AGE_H = 24 * 7;     // el 200WMA apenas cambia semana a semana
 const WMA_PER_RUN = 1;            // 1 petición extra por ciclo (presupuesto ya ajustado con muchos símbolos)
 const MAX_SUBREQUESTS_SAFE = 46;  // margen de seguridad bajo el tope real de 50 de Cloudflare
 const YAHOO_TARGET_COST = 3;      // peticiones por símbolo en el respaldo de Yahoo (sin FMP_KEY): cookie + crumb + quoteSummary
+// Cuántos puntos de histórico de consenso guardar por símbolo (petición del
+// usuario 2026-10-21: gráfico de evolución del consenso). Ni Yahoo ni FMP
+// (gratis) exponen histórico retroactivo del consenso — solo la foto actual —
+// así que esto se construye hacia adelante, un punto por día, desde que se
+// despliega esta versión; no hay forma de rellenar el pasado. 400 puntos ≈ algo
+// más de un año diario por símbolo, y ocupa muy poco (unos pocos números por
+// punto) — se guarda en el mismo documento de KV que el resto del estado, no
+// hace falta un sitio aparte.
+const CONSENSUS_HISTORY_MAX_POINTS = 400;
 
 // Cuántos símbolos caben de verdad al FORZAR refreshTargets en esta misma
 // invocación, sin arriesgarse a pasarse del tope de subpeticiones. Importa
@@ -81,6 +90,21 @@ async function refreshQuotes(env, s, symbols) {
   });
 }
 
+// Añade (o sustituye, si ya hay uno de hoy) un punto diario al histórico del
+// consenso de un símbolo. "Hoy" se calcula en UTC por simplicidad — un refresco
+// forzado varias veces el mismo día solo deja el último valor, no un punto por
+// refresco (si no, forzar "Actualizar todos los consensos" varias veces al día
+// llenaría el histórico de puntos redundantes del mismo día).
+function appendConsensusHistoryPoint(prevHistory, t, now) {
+  if (t.mean == null) return prevHistory || [];
+  const day = new Date(now).toISOString().slice(0, 10);
+  const point = { d: day, mean: t.mean, median: t.median ?? null, high: t.high ?? null, low: t.low ?? null, analysts: t.analysts ?? null };
+  const history = prevHistory && prevHistory.length ? [...prevHistory] : [];
+  if (history.length && history[history.length - 1].d === day) history[history.length - 1] = point;
+  else history.push(point);
+  return history.slice(-CONSENSUS_HISTORY_MAX_POINTS);
+}
+
 async function refreshTargets(env, s, symbols, { force = false, notifyChanges = true, limit = null } = {}) {
   const now = Date.now();
   const stale = symbols
@@ -91,9 +115,10 @@ async function refreshTargets(env, s, symbols, { force = false, notifyChanges = 
     const old = s.targets[sym];
     try {
       const t = await getTargets(sym, env);
+      const history = appendConsensusHistoryPoint(old?.history, t, now);
       // Conserva el 200WMA (se refresca por su cuenta, mucho menos a menudo) al
       // reescribir el resto del consenso.
-      s.targets[sym] = { wma200: old?.wma200 ?? null, wma200UpdatedAt: old?.wma200UpdatedAt ?? null, wma200FailedAt: old?.wma200FailedAt ?? null, ...t, updatedAt: now, prevMean: old?.mean ?? null, prevAnalysts: old?.analysts ?? null, error: null };
+      s.targets[sym] = { wma200: old?.wma200 ?? null, wma200UpdatedAt: old?.wma200UpdatedAt ?? null, wma200FailedAt: old?.wma200FailedAt ?? null, ...t, history, updatedAt: now, prevMean: old?.mean ?? null, prevAnalysts: old?.analysts ?? null, error: null };
       if (notifyChanges && old?.mean && t.mean) {
         const ch = pct(t.mean, old.mean);
         const nChanged = old.analysts && t.analysts && old.analysts !== t.analysts;
@@ -149,6 +174,50 @@ async function runCycle(env, { forceQuotes = false, forceTargets = false } = {})
   s.lastRun = Date.now();
   await saveState(env, s);
   return s;
+}
+
+// ───────── Importar extracto "Confirmation of holdings" de Trading212 (PDF) ─────────
+// El PDF se parsea en el navegador (pdf.js) — aquí solo se recibe ya una lista
+// de filas {isin, name, qty, currency}. Este documento de Trading212 NO trae el
+// precio medio de compra, solo cantidad y el precio de mercado del día del
+// extracto (confirmado mirando el PDF real, 2026-10-21) — así que el import
+// solo toca `qty` (y rellena `isin` la primera vez), nunca `avg`/`costEur`;
+// decisión explícita del usuario, no una limitación a ocultar.
+const normalizeName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// Una misma acción puede aparecer repetida en el extracto con distinta divisa
+// (p. ej. Amazon comprado una vez en USD y otra en EUR — mismo ISIN, mismo
+// valor, Trading212 simplemente separa el lote por divisa de ejecución). Para
+// el seguimiento de cartera es una sola posición: se suman las cantidades.
+function mergeHoldingsByIsin(holdings) {
+  const byIsin = new Map();
+  for (const h of holdings) {
+    if (!h.isin) continue;
+    const prev = byIsin.get(h.isin);
+    if (prev) prev.qty += h.qty;
+    else byIsin.set(h.isin, { ...h });
+  }
+  return [...byIsin.values()];
+}
+
+// Empareja cada fila del extracto con un ítem ya existente en la cartera: por
+// ISIN si ya lo tenemos guardado (de un import anterior), si no por nombre
+// normalizado (y lo deja guardado para la próxima vez). Lo que no encuentra
+// pareja se devuelve en `unmatched` para que el usuario lo añada a mano — no
+// se crean tickers nuevos solos, sería adivinar el símbolo sin confirmar.
+function matchHoldings(items, holdings) {
+  const merged = mergeHoldingsByIsin(holdings);
+  const matched = [], unmatched = [];
+  for (const h of merged) {
+    let item = Object.values(items).find((it) => it.isin && it.isin === h.isin);
+    if (!item) {
+      const hn = normalizeName(h.name);
+      item = Object.values(items).find((it) => !it.isin && it.name && normalizeName(it.name) === hn);
+    }
+    if (item) matched.push({ symbol: item.symbol, isin: h.isin, name: h.name, oldQty: item.qty, newQty: h.qty });
+    else unmatched.push({ isin: h.isin, name: h.name, qty: h.qty, currency: h.currency || null });
+  }
+  return { matched, unmatched };
 }
 
 // ───────────────────────── Rutas /api/* ─────────────────────────
@@ -210,6 +279,20 @@ async function handleApi(req, env, url) {
     s.log = s.log.filter((l) => !(added.includes(l.symbol) && Date.now() - l.t < 5000));
     await saveState(env, s);
     return json({ added, state: publicState(s) });
+  }
+
+  if (path === "/import-holdings" && req.method === "POST") {
+    const s = await loadState(env);
+    const holdings = Array.isArray(body?.holdings) ? body.holdings : [];
+    const { matched, unmatched } = matchHoldings(s.items, holdings);
+    if (body?.apply) {
+      for (const h of matched) {
+        const it = cleanItem({ symbol: h.symbol, qty: h.newQty, isin: h.isin }, s.items[h.symbol]);
+        s.items[h.symbol] = it;
+      }
+      await saveState(env, s);
+    }
+    return json({ matched, unmatched, applied: !!body?.apply });
   }
 
   const m = path.match(/^\/items\/([^/]+)$/);
@@ -285,4 +368,4 @@ async function handleApi(req, env, url) {
   return json({ error: "Ruta no encontrada" }, 404);
 }
 
-export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma };
+export { handleApi, runCycle, refreshQuotes, refreshTargets, refreshFx, refreshWma, appendConsensusHistoryPoint, matchHoldings };

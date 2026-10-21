@@ -3,7 +3,7 @@
 // ticker aparecen precio, sesión y consenso.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle } from "../src/api.js";
+import { handleApi, refreshFx, refreshTargets, refreshWma, runCycle, appendConsensusHistoryPoint, matchHoldings } from "../src/api.js";
 
 class FakeKV {
   constructor() { this.store = new Map(); }
@@ -107,6 +107,91 @@ test("refreshTargets conserva el 200WMA ya guardado al refrescar el resto del co
   await refreshTargets({ MOCK: "1" }, s, ["NVDA"], { force: true, notifyChanges: false });
   assert.equal(s.targets.NVDA.wma200, 111, "el 200WMA no debe perderse al refrescar el consenso");
   assert.equal(s.targets.NVDA.wma200UpdatedAt, 12345);
+});
+
+test("refreshTargets va guardando un punto diario de histórico del consenso", async () => {
+  const s = { targets: {}, settings: { consensusChangePct: 1 }, log: [] };
+  await refreshTargets({ MOCK: "1" }, s, ["NVDA"], { force: true, notifyChanges: false });
+  assert.equal(s.targets.NVDA.history.length, 1);
+  assert.equal(s.targets.NVDA.history[0].mean, s.targets.NVDA.mean);
+});
+
+test("appendConsensusHistoryPoint: un segundo refresco el mismo día sustituye el punto, no lo duplica", () => {
+  const now = Date.parse("2026-10-21T10:00:00Z");
+  const h1 = appendConsensusHistoryPoint(undefined, { mean: 300, high: 350, low: 250, analysts: 10 }, now);
+  const laterSameDay = now + 3600e3;
+  const h2 = appendConsensusHistoryPoint(h1, { mean: 310, high: 360, low: 260, analysts: 11 }, laterSameDay);
+  assert.equal(h2.length, 1);
+  assert.equal(h2[0].mean, 310);
+});
+
+test("appendConsensusHistoryPoint: un refresco al día siguiente añade un punto nuevo", () => {
+  const day1 = Date.parse("2026-10-21T10:00:00Z");
+  const day2 = Date.parse("2026-10-22T10:00:00Z");
+  const h1 = appendConsensusHistoryPoint(undefined, { mean: 300 }, day1);
+  const h2 = appendConsensusHistoryPoint(h1, { mean: 305 }, day2);
+  assert.equal(h2.length, 2);
+  assert.equal(h2[0].mean, 300);
+  assert.equal(h2[1].mean, 305);
+});
+
+test("appendConsensusHistoryPoint: recorta al máximo de puntos", () => {
+  let history;
+  let now = Date.parse("2020-01-01T00:00:00Z");
+  for (let i = 0; i < 410; i++) {
+    history = appendConsensusHistoryPoint(history, { mean: 100 + i }, now);
+    now += 24 * 3600e3;
+  }
+  assert.equal(history.length, 400);
+  assert.equal(history[history.length - 1].mean, 100 + 409);
+});
+
+test("matchHoldings: empareja por ISIN ya guardado y propone la nueva cantidad", () => {
+  const items = { NVDA: { symbol: "NVDA", name: "NVIDIA Corp", qty: 10, isin: "US67066G1040" } };
+  const { matched, unmatched } = matchHoldings(items, [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 12, currency: "USD" }]);
+  assert.equal(unmatched.length, 0);
+  assert.deepEqual(matched, [{ symbol: "NVDA", isin: "US67066G1040", name: "NVIDIA Corp", oldQty: 10, newQty: 12 }]);
+});
+
+test("matchHoldings: sin ISIN guardado, empareja por nombre normalizado (primer import)", () => {
+  const items = { ORCL: { symbol: "ORCL", name: "Oracle Corp", qty: 1, isin: null } };
+  const { matched } = matchHoldings(items, [{ isin: "US68389X1054", name: "Oracle Corp", qty: 1, currency: "USD" }]);
+  assert.equal(matched[0].symbol, "ORCL");
+});
+
+test("matchHoldings: lo que no encuentra pareja (ticker nuevo) va a unmatched, no se crea solo", () => {
+  const { matched, unmatched } = matchHoldings({}, [{ isin: "US4612021034", name: "Intuit Inc", qty: 5, currency: "USD" }]);
+  assert.equal(matched.length, 0);
+  assert.equal(unmatched.length, 1);
+  assert.equal(unmatched[0].isin, "US4612021034");
+});
+
+test("matchHoldings: mismo ISIN repetido con distinta divisa (lotes Trading212) suma las cantidades", () => {
+  const items = { AMZN: { symbol: "AMZN", name: "Amazon.com Inc", qty: 1, isin: "US0231351067" } };
+  const { matched } = matchHoldings(items, [
+    { isin: "US0231351067", name: "Amazon.com Inc", qty: 4, currency: "USD" },
+    { isin: "US0231351067", name: "Amazon.com Inc", qty: 3, currency: "EUR" },
+  ]);
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].newQty, 7);
+});
+
+test("/api/import-holdings en modo dry-run no toca el estado; con apply sí actualiza qty y guarda el isin", async () => {
+  const env = makeEnv();
+  await call(env, "POST", "/api/items", { symbol: "NVDA", name: "NVIDIA Corp", kind: "holding", qty: 10, avg: 200 });
+  const dry = await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }] });
+  assert.equal(dry.status, 200);
+  assert.equal(dry.data.matched[0].symbol, "NVDA");
+  assert.equal(dry.data.applied, false);
+  const stillOld = await call(env, "GET", "/api/state");
+  assert.equal(stillOld.data.items.NVDA.qty, 10, "dry-run no debe escribir nada");
+
+  const apply = await call(env, "POST", "/api/import-holdings", { holdings: [{ isin: "US67066G1040", name: "NVIDIA Corp", qty: 16, currency: "USD" }], apply: true });
+  assert.equal(apply.data.applied, true);
+  const after = await call(env, "GET", "/api/state");
+  assert.equal(after.data.items.NVDA.qty, 16);
+  assert.equal(after.data.items.NVDA.isin, "US67066G1040");
+  assert.equal(after.data.items.NVDA.avg, 200, "el precio medio no lo toca este import");
 });
 
 test("/api/backtest simula la estrategia de tramos sobre una posición existente", async () => {

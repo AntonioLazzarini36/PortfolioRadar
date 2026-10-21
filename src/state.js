@@ -50,6 +50,11 @@ function cleanItem(b, prev = {}) {
     // Euros reales gastados al comprar (dato exacto de tu bróker, p. ej. Trading212),
     // para una ganancia en EUR real en vez de la aproximación con la tasa de hoy — ver CLAUDE.md.
     costEur: num(b.costEur ?? prev.costEur),
+    // ISIN (identificador internacional del valor) — se rellena solo la primera vez
+    // que un import de extracto de Trading212 (ver importHoldings en api.js) hace
+    // "match" por nombre con este ítem; a partir de ahí, los imports siguientes
+    // emparejan por ISIN directamente, mucho más fiable que el nombre.
+    isin: (b.isin ?? prev.isin ?? null) || null,
     note: (b.note ?? prev.note ?? "").toString().slice(0, 300),
     // "" o ausente = automático (el servidor lo rellena con la moneda que reporte
     // la cotización); un valor explícito (p. ej. el usuario cambió el selector de
