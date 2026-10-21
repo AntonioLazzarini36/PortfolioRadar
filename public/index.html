@@ -1129,35 +1129,19 @@ async function resolveVerifiedNumber(tok, canvas, viewport, w1, w0) {
   if (!hit) { candidates.push(await assembleTokenPerChar(parts, canvas, viewport, w0, DIGITS)); hit = agreed(); }
   return hit ? { ok: true, value: parseFloat(clean(hit)) } : { ok: false, value: null };
 }
-async function extractTrading212Positions(file, onProgress) {
-  const [pdfjsLib, Tesseract] = await Promise.all([loadPdfJs(), loadTesseract()]);
-  const buf = await file.arrayBuffer();
-  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-  const w1 = await Tesseract.createWorker("eng", 1);
-  const w0 = await Tesseract.createWorker("eng", 0);
-  const positions = [], uncertain = [];
-  try {
-    let pageNum = null;
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      if (content.items.map((i) => i.str).join(" ").includes("Open positions")) { pageNum = p; break; }
-    }
-    if (pageNum == null) return { positions, uncertain };
-    onProgress?.(`Leyendo posiciones abiertas (página ${pageNum} de ${doc.numPages})…`);
-    const page = await doc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: T212_SCALE });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width; canvas.height = viewport.height;
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-    const content = await page.getTextContent();
-    const rows = new Map();
-    for (const item of content.items) {
-      const key = Math.round(item.transform[5] / 2) * 2;
-      if (!rows.has(key)) rows.set(key, []);
-      rows.get(key).push(item);
-    }
-    for (const y of [...rows.keys()].sort((a, b) => b - a)) {
+// Lee las filas de posición de UNA página ya renderizada y las añade a
+// `positions`/`uncertain`. Devuelve cuántas filas válidas encontró — se usa
+// para saber si la tabla sigue en la página siguiente o si ya se salió de esa
+// sección (ver extractTrading212Positions).
+async function extractPositionsFromPage(content, canvas, viewport, w1, w0, positions, uncertain) {
+  const rows = new Map();
+  for (const item of content.items) {
+    const key = Math.round(item.transform[5] / 2) * 2;
+    if (!rows.has(key)) rows.set(key, []);
+    rows.get(key).push(item);
+  }
+  let found = 0;
+  for (const y of [...rows.keys()].sort((a, b) => b - a)) {
       const items = rows.get(y).sort((a, b) => a.transform[4] - b.transform[4]);
       const tokens = []; let cur = [];
       for (const it of items) { if (it.str === " ") { if (cur.length) tokens.push(cur); cur = []; } else cur.push(it); }
@@ -1196,8 +1180,44 @@ async function extractTrading212Positions(file, onProgress) {
       const val = await resolveVerifiedNumber(valAcctTok.slice(1), canvas, viewport, w1, w0);
       const costEur = (ret.ok && val.ok) ? (val.value - (retNegative ? -ret.value : ret.value)) : null;
 
+      found++;
       if (!isinOk || !qty.ok) { uncertain.push({ name: ticker, isin, qty: qty.ok ? qty.value : null }); continue; }
       positions.push({ ticker, isin, qty: qty.value, avg: avg.ok ? avg.value : null, avgCurrency, costEur });
+  }
+  return found;
+}
+// El "Activity statement" puede tener muchas páginas (ejecuciones, dividendos,
+// etc.) — se busca "Open positions" en todo el documento e ignora el resto, y
+// una vez encontrada se sigue leyendo página a página MIENTRAS sigan
+// apareciendo filas de posición (petición del usuario 2026-10-21: con una
+// cartera grande la tabla puede seguir en la página siguiente) — se para en
+// cuanto una página no aporta ninguna fila válida, señal de que ya se salió
+// de esa sección del documento.
+async function extractTrading212Positions(file, onProgress) {
+  const [pdfjsLib, Tesseract] = await Promise.all([loadPdfJs(), loadTesseract()]);
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  const w1 = await Tesseract.createWorker("eng", 1);
+  const w0 = await Tesseract.createWorker("eng", 0);
+  const positions = [], uncertain = [];
+  try {
+    let startPage = null;
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      if (content.items.map((i) => i.str).join(" ").includes("Open positions")) { startPage = p; break; }
+    }
+    if (startPage == null) return { positions, uncertain };
+    for (let p = startPage; p <= doc.numPages; p++) {
+      onProgress?.(`Leyendo posiciones abiertas (página ${p} de ${doc.numPages})…`);
+      const page = await doc.getPage(p);
+      const viewport = page.getViewport({ scale: T212_SCALE });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const content = await page.getTextContent();
+      const found = await extractPositionsFromPage(content, canvas, viewport, w1, w0, positions, uncertain);
+      if (found === 0) break;
     }
   } finally { await w1.terminate(); await w0.terminate(); }
   return { positions, uncertain };
