@@ -28,8 +28,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top) + 12px) 16px 8px}
 .top{display:flex;align-items:center;gap:10px}
 .top h1{font-size:21px;margin:0;flex:1;letter-spacing:-.01em}
-.iconbtn{border:0;background:var(--card);border:1px solid var(--line);width:40px;height:40px;border-radius:12px;display:grid;place-items:center;cursor:pointer}
+.iconbtn{border:0;background:var(--card);border:1px solid var(--line);width:40px;height:40px;border-radius:12px;display:grid;place-items:center;cursor:pointer;transition:background .1s ease}
 .iconbtn svg{width:20px;height:20px}
+.iconbtn:active{background:var(--line)}
 .status{font-size:12px;color:var(--mut);margin-top:4px;display:flex;gap:8px;align-items:center}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
 .dot.on{background:var(--g)}
@@ -42,11 +43,12 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(saf
 
 main{padding:4px 16px calc(env(safe-area-inset-bottom) + 96px)}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0 12px}
-.sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 11px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .sum .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:650}
 .sum .v{font-size:16px;font-weight:700;margin-top:2px}
 
-.trow{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:8px;cursor:pointer}
+.trow{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:transform .08s ease}
+.trow:active{transform:scale(.99)}
 .trow.pos{background:var(--gl);border-color:var(--g)}
 .trow.neg{background:var(--rl);border-color:var(--r)}
 .trow-metrics{font-size:12.5px;color:var(--ink2);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -85,12 +87,22 @@ main{padding:4px 16px calc(env(safe-area-inset-bottom) + 96px)}
 .sector-pill{display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:7px 12px;font-size:12.5px;color:var(--ink2)}
 .sector-pill i{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .sector-pill b{color:var(--ink);font-weight:700}
-.sec{margin-top:12px}
-.sec summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink2);list-style:none;display:flex;align-items:center;gap:6px;padding:2px 0}
+/* Cada sección de la ficha es su propia tarjeta (petición del usuario
+   2026-10-25: "la parte de ver la empresa... se ve bastante fea") en vez de
+   un título plegable flotando directamente sobre el fondo — así se lee como
+   una lista de bloques independientes, no como una pared de texto. */
+.sec{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.sec summary{cursor:pointer;font-size:13.5px;font-weight:700;color:var(--ink);list-style:none;display:flex;align-items:center;gap:7px;padding:1px 0}
 .sec summary::-webkit-details-marker{display:none}
 .sec summary::before{content:"▸";display:inline-block;font-size:11px;color:var(--mut);transition:transform .15s ease}
 .sec[open] summary::before{transform:rotate(90deg)}
-.sec .tgtbox{margin-top:8px}
+.sec .tgtbox{margin-top:10px}
+.qnav{display:flex;gap:8px;overflow-x:auto;margin:2px -2px 4px;padding:2px 2px 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.qnav::-webkit-scrollbar{display:none}
+.qnav-pill{flex-shrink:0;border:1px solid var(--line);background:var(--card);color:var(--ink2);font-size:12.5px;font-weight:650;padding:7px 14px;border-radius:999px;cursor:pointer}
+.qnav-pill:active{background:var(--accent-l);color:var(--accent);border-color:var(--accent)}
+.btnrow{display:flex;gap:10px;margin-top:10px}
+.btnrow .btn{margin-top:0;flex:1}
 .lg{display:inline-block}
 .lg.p{width:10px;height:10px;border-radius:50%;background:var(--ink)}
 .lg.m{width:3px;height:12px;background:var(--accent)}
@@ -101,7 +113,7 @@ main{padding:4px 16px calc(env(safe-area-inset-bottom) + 96px)}
 .fab{position:fixed;right:18px;bottom:calc(env(safe-area-inset-bottom) + 18px);width:58px;height:58px;border-radius:18px;border:0;background:var(--accent);color:#fff;
   font-size:30px;box-shadow:0 6px 20px rgba(36,87,230,.35);cursor:pointer;z-index:6}
 
-.log{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px}
+.log{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .log .t{font-weight:650;font-size:14px}
 .log .b{font-size:13px;color:var(--ink2);margin-top:2px}
 .log .d{font-size:11px;color:var(--mut);margin-top:4px}
@@ -111,12 +123,20 @@ main{padding:4px 16px calc(env(safe-area-inset-bottom) + 96px)}
 .sheet{background:var(--sheet);width:100%;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 18px)}
 .sheet h2{margin:0 0 12px;font-size:19px;display:flex;align-items:center;gap:8px}
 .sheet h2 .x{margin-left:auto}
+/* La ficha de una acción es una página completa, no una hoja/preview (petición
+   del usuario 2026-10-25: "no quiero que sea como un preview") — ocupa toda la
+   pantalla, sin esquinas redondeadas ni fondo oscuro detrás. Ajustes sigue
+   siendo la hoja inferior de siempre (.overlay/.sheet sin esta clase). */
+#ovItem{align-items:stretch;background:var(--bg)}
+#ovItem .sheet{max-height:100vh;height:100%;border-radius:0;padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 18px)}
 label.f{display:block;font-size:12.5px;color:var(--ink2);font-weight:600;margin:12px 0 5px}
 input.i,textarea.i,select.i{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.btn{width:100%;border:0;border-radius:13px;padding:13px;font-weight:700;background:var(--accent);color:#fff;margin-top:16px;cursor:pointer;font-size:15.5px}
-.btn.sec{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
-.btn.danger{background:var(--rl);color:var(--r)}
+.btn{width:100%;border:0;border-radius:13px;padding:13px;font-weight:700;background:var(--accent);color:#fff;margin-top:16px;cursor:pointer;font-size:15.5px;box-shadow:0 3px 10px rgba(0,0,0,.12);transition:transform .08s ease,box-shadow .08s ease}
+.btn:active{transform:translateY(1px);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.btn.sec{background:var(--card);color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.btn.danger{background:transparent;color:var(--r);border:1.5px solid var(--rl);box-shadow:none}
+.btn.danger:active{background:var(--rl)}
 .res{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:7px;cursor:pointer;display:flex;gap:10px;align-items:center}
 .res b{min-width:70px}
 .res span{font-size:13px;color:var(--ink2);flex:1}
@@ -306,7 +326,12 @@ function sectorBreakdown(hold) {
   if (!total) return "";
   const rows = Object.entries(byInd).sort((a, b) => b[1] - a[1]);
   const pills = rows.map(([name, v]) => `<span class="sector-pill"><i style="background:${sectorColor(name)}"></i>${esc(name)} <b>${nf(v / total * 100, 0)}%</b></span>`).join("");
-  return section("Distribución por sector", `<div class="sector-pills">${pills}</div>`, false);
+  // Margen extra abajo (petición del usuario 2026-10-25: "está demasiado
+  // pegado a lo demás") — el resumen de arriba (summary/Valor total) ya
+  // tiene su propio espaciado, pero esta sección es la última antes de la
+  // lista de acciones y necesita su propio hueco para no pegarse a la
+  // primera fila.
+  return `<div style="margin-bottom:14px">${section("Distribución por sector", `<div class="sector-pills">${pills}</div>`, false)}</div>`;
 }
 
 // ───────── render ─────────
@@ -396,10 +421,12 @@ function rangeBar(m) {
 function consensusHistoryChart(t, c) {
   const hist = t.history || [];
   if (hist.length < 2) return `<p class="hint">Aún no hay suficiente histórico — se guarda un punto por día a partir de ahora, así que esto se irá llenando solo.</p>`;
-  const W = 300, H = 120, pad = 8;
+  const W = 300, H = 190, pad = 10;
   const all = hist.flatMap(h => [h.mean, h.high, h.low]).filter(v => v != null);
   let lo = Math.min(...all), hi = Math.max(...all);
-  const padV = (hi - lo) * 0.1 || hi * 0.05 || 1; lo -= padV; hi += padV;
+  // Hueco extra arriba/abajo para que las etiquetas del primer y último
+  // consenso (añadidas abajo) no se corten contra el borde del SVG.
+  const padV = (hi - lo) * 0.12 || hi * 0.05 || 1; lo -= padV; hi += padV * 1.8;
   const x = (i) => pad + (i / (hist.length - 1)) * (W - pad * 2);
   const y = (v) => H - pad - ((v - lo) / (hi - lo)) * (H - pad * 2);
   const linePts = (key) => hist.map((h, i) => h[key] != null ? `${x(i).toFixed(1)},${y(h[key]).toFixed(1)}` : null).filter(Boolean).join(" ");
@@ -408,15 +435,64 @@ function consensusHistoryChart(t, c) {
   const bandPath = (top.length && bot.length) ? `M${top.map(p => p.join(",")).join(" L")} L${bot.map(p => p.join(",")).join(" L")} Z` : "";
   const fmtDate = (d) => new Date(d).toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
   const meanPts = linePts("mean");
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:120px;display:block">
+  // Líneas guía horizontales, solo de referencia visual (no son ejes con valores reales).
+  const grid = [0.25, 0.5, 0.75].map(f => {
+    const gy = (H - pad - f * (H - pad * 2)).toFixed(1);
+    return `<line x1="${pad}" y1="${gy}" x2="${W - pad}" y2="${gy}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2,3"></line>`;
+  }).join("");
+  // Un punto en el eje solo cuando el consenso medio CAMBIÓ de verdad respecto
+  // al registro anterior — no en cada punto diario, la mayoría de los días no
+  // hay cambio real (petición del usuario 2026-10-25: marcar cuándo se movió
+  // el consenso, no solo mostrar el primer y el último valor).
+  const changes = [];
+  hist.forEach((h, i) => { if (h.mean != null && (i === 0 || hist[i - 1].mean == null || hist[i - 1].mean !== h.mean)) changes.push({ i, ...h }); });
+  const dots = changes.map(ch => `<circle cx="${x(ch.i).toFixed(1)}" cy="${y(ch.mean).toFixed(1)}" r="${ch.i === hist.length - 1 ? 3.5 : 2.5}" fill="var(--accent)" stroke="var(--card)" stroke-width="1.5"></circle>`).join("");
+  // Etiquetas del primer y último consenso directamente sobre el gráfico
+  // (petición del usuario 2026-10-25: "poner en el primer y el último
+  // consenso al menos el dato"), encima del punto correspondiente — el
+  // primero alineado a la izquierda, el último a la derecha para que no se
+  // salgan del SVG.
+  const endLabel = (i, anchor) => {
+    const h = hist[i]; if (h.mean == null) return "";
+    const lx = x(i), ly = y(h.mean);
+    const valueTxt = `${nf(h.mean)} ${c}`, dateTxt = fmtDate(h.d);
+    // Fondo opaco detrás de cada etiqueta — sin esto la línea/polyline del
+    // consenso las atraviesa y se vuelven ilegibles (petición del usuario
+    // 2026-10-25: "aparecen tapadas por la línea"). El ancho se estima por
+    // nº de caracteres (no hay medida real de texto disponible en un SVG
+    // generado como string), con margen de sobra para no recortar.
+    const valueW = valueTxt.length * 6.3, dateW = dateTxt.length * 5.6;
+    const boxW = Math.max(valueW, dateW) + 6;
+    const boxX = anchor === "start" ? lx - 3 : lx - boxW + 3;
+    const topY = Math.max(2, ly - 24);
+    return `<rect x="${boxX.toFixed(1)}" y="${topY.toFixed(1)}" width="${boxW.toFixed(1)}" height="22" rx="4" fill="var(--card)" opacity="0.92"></rect>
+      <text x="${lx.toFixed(1)}" y="${(ly - 12).toFixed(1)}" text-anchor="${anchor}" font-size="10.5" fill="var(--fg)" font-weight="700">${esc(valueTxt)}</text>
+      <text x="${lx.toFixed(1)}" y="${(ly - 3).toFixed(1)}" text-anchor="${anchor}" font-size="9" fill="var(--mut)">${esc(dateTxt)}</text>`;
+  };
+  const endLabels = endLabel(0, "start") + endLabel(hist.length - 1, "end");
+  // Lista de los últimos cambios reales (fecha, valor, variación frente al
+  // cambio anterior) en vez de solo el primer y el último registro — así se ve
+  // qué ha pasado recientemente, no solo los dos extremos.
+  const withDelta = changes.map((ch, i) => ({ ...ch, prevMean: i > 0 ? changes[i - 1].mean : null }));
+  const recent = withDelta.slice(-6).reverse();
+  const rows = recent.map(r => {
+    const delta = r.prevMean != null ? ((r.mean - r.prevMean) / r.prevMean) * 100 : null;
+    return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px">
+        <span style="color:var(--mut)">${esc(fmtDate(r.d))}</span>
+        <span>${nf(r.mean)} ${c}${r.analysts != null ? ` <span style="color:var(--mut);font-size:11px">· ${r.analysts} analistas</span>` : ""}</span>
+        <span class="${delta == null ? "" : cls(delta)}" style="font-weight:600">${delta == null ? "primer registro" : pc(delta, 1)}</span>
+      </div>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+      ${grid}
       ${bandPath ? `<path d="${esc(bandPath)}" fill="var(--band)" opacity="0.6"></path>` : ""}
-      ${meanPts ? `<polyline points="${esc(meanPts)}" fill="none" stroke="var(--accent)" stroke-width="1.8"></polyline>` : ""}
+      ${meanPts ? `<polyline points="${esc(meanPts)}" fill="none" stroke="var(--accent)" stroke-width="2"></polyline>` : ""}
+      ${dots}
+      ${endLabels}
     </svg>
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:2px">
-      <span>${esc(fmtDate(hist[0].d))} · ${nf(hist[0].mean)} ${c}</span>
-      <span>${esc(fmtDate(hist[hist.length - 1].d))} · ${nf(hist[hist.length - 1].mean)} ${c}</span>
-    </div>
-    <div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso medio</span></div>`;
+    <div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso medio</span><span>● cambio real</span></div>
+    <div class="hint" style="margin:6px 2px 2px">Últimos cambios de consenso</div>
+    ${rows}`;
 }
 
 // Cuando dos marcadores caen cerca (p. ej. el precio y mi entrada), sus
@@ -606,9 +682,9 @@ const clsEarnings = (d) => d == null ? "" : d <= 3 ? "r" : "";
 const clsRating = (r) => { if (!r) return ""; const s = r.toLowerCase(); if (s.includes("strong buy") || s === "buy") return "g"; if (s.includes("strong sell") || s === "sell") return "r"; return ""; };
 // Sección plegable: título + contenido (normalmente un statGrid). Si el
 // contenido viene vacío no pinta nada (p. ej. sin fundamentales todavía).
-function section(title, html, open = true) {
+function section(title, html, open = true, id = "") {
   if (!html) return "";
-  return `<details class="sec" ${open ? "open" : ""}><summary>${esc(title)}</summary>${html}</details>`;
+  return `<details class="sec"${id ? ` id="${id}"` : ""} ${open ? "open" : ""}><summary>${esc(title)}</summary>${html}</details>`;
 }
 
 // Vista previa (dentro de la hoja de detalle/edición): todo lo que antes iba
@@ -658,7 +734,20 @@ function positionSection(it, m) {
     ? `<div id="holdFields">${inputsHtml}</div>${statsHtml}`
     : `<div id="posEmpty"><p class="hint">No tienes ninguna posición en esta acción.</p><button class="btn sec" id="fAddPos" type="button">+ Añadir posición</button></div>
        <div id="holdFields" style="display:none">${inputsHtml}</div>`;
-  return section("Tu posición", body, hasPos);
+  return section("Tu posición", body, hasPos, "sec-pos");
+}
+// Pulsar una píldora de la navegación rápida abre (si estaba plegada) y lleva
+// a esa sección con scroll suave — ver el comentario junto a `quickNav` en
+// preview() para el por qué.
+function wireQuickNav(root) {
+  root.querySelectorAll(".qnav-pill").forEach((btn) => {
+    btn.onclick = () => {
+      const el = root.querySelector("#" + btn.dataset.target);
+      if (!el) return;
+      if (el.tagName === "DETAILS") el.open = true;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
 }
 function wirePositionSection(root) {
   const btn = root.querySelector("#fAddPos");
@@ -690,7 +779,7 @@ function backtestSection(m) {
     </div>
     <button class="btn sec" id="btRun" type="button">Simular</button>
     <div id="btOut"></div>
-  `, false);
+  `, false, "sec-sim");
 }
 function renderBacktestResult(d, c) {
   const diff = d.strategyGainPct != null && d.holdGainPct != null ? d.strategyGainPct - d.holdGainPct : null;
@@ -734,8 +823,8 @@ function preview(m) {
     { label: "Mínimo", value: m.t.low != null ? `${nf(m.t.low)} ${c}` : null, sub: m.t.low != null ? pc(m.upLow, 0) : null, subCls: cls(m.upLow) },
     { label: "Analistas", value: m.t.analysts ?? null, sub: m.t.rating || null, subCls: clsRating(m.t.rating) },
     { label: "Actualizado", value: m.t.updatedAt ? new Date(m.t.updatedAt).toLocaleDateString("es-ES") : null, sub: m.t.source || null },
-  ])) || `<p class="hint">Sin consenso de analistas todavía.</p>`;
-  const consensoHist = section("Evolución del consenso", consensusHistoryChart(m.t, c), false);
+  ]), true, "sec-consenso") || `<p class="hint">Sin consenso de analistas todavía.</p>`;
+  const consensoHist = section("Evolución del consenso", consensusHistoryChart(m.t, c), false, "sec-hist");
   const fundamentales = section("Fundamentales", statGrid([
     { label: "P/E", value: m.t.pe != null ? nf(m.t.pe, 1) : null, valueCls: clsPE(m.t.pe) },
     { label: "Fwd P/E", value: m.t.forwardPe != null ? nf(m.t.forwardPe, 1) : null, valueCls: clsPE(m.t.forwardPe) },
@@ -755,20 +844,32 @@ function preview(m) {
     { label: "Ratio de liquidez", value: m.t.currentRatio != null ? nf(m.t.currentRatio, 2) : null, valueCls: clsCurrentRatio(m.t.currentRatio) },
     { label: "Insiders", value: m.t.heldPercentInsiders != null ? pctPlain(m.t.heldPercentInsiders) : null, valueCls: clsInsiders(m.t.heldPercentInsiders) },
     { label: "Interés en corto", value: m.t.shortPercentOfFloat != null ? pctPlain(m.t.shortPercentOfFloat) : null, valueCls: clsShortInterest(m.t.shortPercentOfFloat) },
-  ]));
+  ]), true, "sec-fund");
   const resultados = section("Próximos resultados", statGrid([
     { label: "Próximo informe", value: m.t.nextEarningsDate != null ? new Date(m.t.nextEarningsDate).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" }) : null, sub: m.earningsDays != null ? (m.earningsDays === 0 ? "hoy" : `en ${m.earningsDays} día${m.earningsDays === 1 ? "" : "s"}`) : null, subCls: clsEarnings(m.earningsDays) },
     { label: "EPS estimado", value: m.t.nextEarningsEpsEstimate != null ? nf(m.t.nextEarningsEpsEstimate, 2) : null },
-  ]));
-  const descripcion = section("Sobre la empresa", m.t.description ? `<p class="hint" style="margin:4px 2px 0;color:var(--ink2);line-height:1.5">${esc(m.t.description)}</p>` : "", false);
+  ]), true, "sec-earnings");
+  const descripcion = section("Sobre la empresa", m.t.description ? `<p class="hint" style="margin:4px 2px 0;color:var(--ink2);line-height:1.5">${esc(m.t.description)}</p>` : "", false, "sec-about");
   const objetivos = section("Tus objetivos", statGrid([
     { label: "Mi objetivo de venta", value: m.it.myTarget != null ? `${nf(m.it.myTarget)} ${c}` : null, sub: m.it.myTarget != null ? pc(m.upMine) : null, subCls: cls(m.upMine) },
     { label: "Comprar por debajo de", value: m.it.myBuy != null ? `${nf(m.it.myBuy)} ${c}` : null, sub: m.it.myBuy != null ? pc(m.toBuy) : null, subCls: cls(m.toBuy) },
-  ]));
+  ]), true, "sec-goals");
   const posicion = positionSection(m.it, m);
   const simulador = backtestSection(m);
   const err = [m.q.error && !m.p ? "Precio: " + m.q.error : "", !m.t.mean && m.t.error ? "Consenso: " + m.t.error : ""].filter(Boolean).join(" · ");
   const rb = rangeBar(m);
+  // Navegación rápida horizontal: en vez de obligar a bajar por una lista
+  // larga de secciones plegables para ver qué hay, una fila de píldoras
+  // arriba lleva directo a cada una (petición del usuario 2026-10-25: "una
+  // lista horizontal arriba para presionar a donde quiero ir"). Solo se
+  // listan las secciones que realmente tienen contenido para esta acción.
+  const navItems = [
+    ["sec-consenso", "Consenso", consenso], ["sec-hist", "Evolución", consensoHist],
+    ["sec-fund", "Fundamentales", fundamentales], ["sec-earnings", "Resultados", resultados],
+    ["sec-about", "Empresa", descripcion], ["sec-goals", "Objetivos", objetivos],
+    ["sec-pos", "Posición", posicion], ["sec-sim", "Simulador", simulador],
+  ].filter(([, , html]) => html);
+  const quickNav = navItems.length ? `<div class="qnav">${navItems.map(([id, label]) => `<button type="button" class="qnav-pill" data-target="${id}">${esc(label)}</button>`).join("")}</div>` : "";
   return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <img class="logo logo-lg" src="${logoUrl(m.sym)}" alt="" onerror="this.style.display='none'">
       <div><div class="tk" style="font-size:18px">${esc(m.sym)}</div><div class="nm" style="max-width:none">${esc(m.it.name || "")}</div>${m.industry ? `<div class="nm" style="max-width:none">${esc(m.industry)}${m.sector && m.sector !== m.industry ? ` · ${esc(m.sector)}` : ""}</div>` : ""}</div>
@@ -779,6 +880,7 @@ function preview(m) {
     </div>
     ${rb}
     ${rb ? `<div class="legend"><span><i class="lg b"></i>rango analistas</span><span><i class="lg m"></i>consenso</span><span><i class="lg p"></i>precio</span><span><i class="lg e"></i>mi entrada</span><span><i class="lg t"></i>mi objetivo</span></div>` : ""}
+    ${quickNav}
     ${descripcion}
     ${consenso}
     ${consensoHist}
@@ -828,13 +930,15 @@ function openItem(sym) {
         <textarea class="i" id="fNote" rows="2" placeholder="Por qué la tengo / la vigilo">${esc(it?.note || "")}</textarea>
       </details>
       <button class="btn" id="fSave">Guardar</button>
-      ${it ? `<button class="btn sec" id="fRefT">Actualizar consenso ahora</button><button class="btn danger" id="fDel">Eliminar</button>` : ""}
+      ${it ? `<div class="btnrow"><button class="btn sec" id="fRefT">Actualizar consenso</button><button class="btn danger" id="fDel">Eliminar</button></div>` : ""}
     </div>`;
+  pushSheetNav();
   $("#ovItem").classList.add("on");
   layoutRangeLabels(sh);
   wireStatInfo(sh);
   wirePositionSection(sh);
   wireBacktest(sh, sym, m ? cur(m.q.currency) : "");
+  wireQuickNav(sh);
   sh.querySelector("[data-close]").onclick = closeSheets;
   if (!it) {
     const q = $("#q"); setTimeout(() => q.focus(), 50);
@@ -1160,7 +1264,11 @@ function wirePositionsImport(root) {
     out.querySelectorAll("[data-addisin]").forEach((b) => b.onclick = () => {
       const h = unmatched.find((u) => u.isin === b.dataset.addisin);
       pendingPositionFill = h;
-      closeSheets(); openItem(null);
+      // Solo cambia de hoja (Ajustes → ficha), no la cierra de verdad: usa
+      // hideSheets() en vez de closeSheets() para no tocar el historial del
+      // navegador aquí — openItem() reutiliza la misma entrada ya abierta
+      // (ver pushSheetNav()), así un solo "atrás" sigue cerrando una sola vez.
+      hideSheets(); openItem(null);
       setTimeout(() => { const q = $("#q"); if (q) { q.value = h.isin; q.dispatchEvent(new Event("input")); } }, 80);
     });
     out.querySelectorAll("[data-dismiss]").forEach((b) => b.onclick = () => {
@@ -1227,6 +1335,7 @@ function openSettings(needToken) {
     <button class="btn sec" id="sAllT">Actualizar todos los consensos</button>
     <button class="btn sec" id="sDiag">Diagnóstico de fuentes de datos</button>
     <pre id="diagOut" style="white-space:pre-wrap;font-size:11px;color:var(--ink2)"></pre>` : ""}`;
+  pushSheetNav();
   $("#ovSettings").classList.add("on");
   $("#sheetSettings [data-close]").onclick = closeSheets;
   $("#sTokSave").onclick = async () => { token = $("#sTok").value.trim(); LS.set("token", token); try { await load(); closeSheets(); toast("Conectado"); } catch (e) { toast(e.message); } };
@@ -1240,7 +1349,30 @@ function openSettings(needToken) {
   $("#sDiag").onclick = async () => { $("#diagOut").textContent = "Probando…"; try { const d = await api("/diag?symbol=" + (Object.keys(S.items)[0] || "AAPL")); $("#diagOut").textContent = JSON.stringify(d, null, 1); } catch (e) { $("#diagOut").textContent = e.message; } };
   wirePositionsImport($("#sheetSettings"));
 }
-function closeSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
+// Las "hojas" (ficha de acción, Ajustes) se abrían como una simple capa
+// superpuesta, sin ser página ni entrada de historial — así que el botón
+// "atrás" del móvil (o el gesto, en la PWA instalada) no las cerraba, sino
+// que salía directamente de la app (petición del usuario 2026-10-25). Ahora
+// abrir CUALQUIER hoja empuja una única entrada de historial (pushSheetNav);
+// cambiar de una hoja a otra mientras ya hay una abierta no añade una
+// segunda (ver el "Buscar y añadir" de más arriba, que usa hideSheets() en
+// vez de closeSheets() para eso). "Atrás" dispara popstate → solo oculta,
+// sin volver a navegar; cerrar desde la UI (✕, guardar, eliminar, tocar
+// fuera) usa closeSheets(), que deshace esa entrada con history.back() para
+// que no se quede una entrada "fantasma" en el historial.
+let navSheetPushed = false;
+function pushSheetNav() {
+  if (navSheetPushed) return;
+  navSheetPushed = true;
+  history.pushState({ sheet: true }, "", location.pathname + location.search);
+}
+function hideSheets() { closeInfoPop(); document.querySelectorAll(".overlay").forEach(o => o.classList.remove("on")); }
+function closeSheets() {
+  const wasPushed = navSheetPushed;
+  hideSheets();
+  if (wasPushed) { navSheetPushed = false; history.back(); }
+}
+window.addEventListener("popstate", () => { navSheetPushed = false; hideSheets(); });
 document.querySelectorAll(".overlay").forEach(o => o.addEventListener("click", e => { if (e.target === o) closeSheets(); }));
 
 // ───────── eventos ─────────

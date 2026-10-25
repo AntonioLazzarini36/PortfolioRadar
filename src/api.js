@@ -335,7 +335,18 @@ async function handleApi(req, env, url) {
   const m = path.match(/^\/items\/([^/]+)$/);
   if (m && req.method === "DELETE") {
     const s = await loadState(env); const sym = decodeURIComponent(m[1]).toUpperCase();
-    delete s.items[sym]; delete s.market[sym]; delete s.targets[sym];
+    // `s.targets[sym]` (incl. `history`, the consensus-over-time chart data) is
+    // deliberately NOT deleted here (changed 2026-10-25, user request): the
+    // user wants the consensus history kept forever even after removing a
+    // symbol from the watchlist/cartera, not wiped. It simply stops being
+    // touched — refreshTargets()/refreshWma() only ever iterate symbols still
+    // in `s.items` (via prioritizeSymbols), so an orphaned `s.targets[sym]`
+    // just sits frozen in KV until the symbol is added back, at which point
+    // the next stale-check refresh picks its history back up where it left
+    // off (see refreshTargets's `old?.history` spread). Harmless to keep
+    // around: nothing iterates `Object.keys(s.targets)`, every read is a
+    // lookup by a symbol that's actually in `s.items`.
+    delete s.items[sym]; delete s.market[sym];
     for (const k of Object.keys(s.flags)) if (k.startsWith(sym + ":")) delete s.flags[k];
     await saveState(env, s);
     return json(publicState(s));

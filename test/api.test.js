@@ -56,13 +56,18 @@ test("/api/import acepta varias líneas con distintos separadores", async () => 
   assert.equal(data.state.items.ADBE.kind, "watch");
 });
 
-test("/api/items DELETE elimina el valor y sus datos asociados", async () => {
+test("/api/items DELETE elimina el valor y sus datos de mercado, pero no el histórico de consenso", async () => {
   const env = makeEnv();
   await call(env, "POST", "/api/items", { symbol: "NVDA" });
   const { status, data } = await call(env, "DELETE", "/api/items/NVDA");
   assert.equal(status, 200);
   assert.equal(data.items.NVDA, undefined);
   assert.equal(data.market.NVDA, undefined);
+  // Petición del usuario 2026-10-25: el histórico de consenso (para el
+  // gráfico de evolución) se guarda para siempre, aunque el valor se borre
+  // de la cartera/watchlist — solo deja de actualizarse hasta que se vuelva
+  // a añadir.
+  assert.equal(typeof data.targets.NVDA.mean, "number");
 });
 
 test("/api/search en modo MOCK responde con el ticker buscado", async () => {
