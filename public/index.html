@@ -1197,7 +1197,7 @@ async function extractTrading212Positions(file, onProgress) {
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
       const content = await page.getTextContent();
-      if (content.items.map((i) => i.str).join(" ").includes("Open positions")) { startPage = p; break; }
+      if (content.items.map((i) => i.str).join(" ").toLowerCase().includes("open positions")) { startPage = p; break; }
     }
     if (startPage == null) return { positions, uncertain };
     for (let p = startPage; p <= doc.numPages; p++) {
